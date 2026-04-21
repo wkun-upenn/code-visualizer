@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>143. Reorder List — Step Visualizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #fff; font-family: system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; color: #111; }
+  h1 { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { font-size: 0.8rem; color: #666; margin-bottom: 24px; }
+
+  .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  button { padding: 6px 18px; border: 1px solid #ccc; border-radius: 6px; background: #f5f5f5; font-size: 0.85rem; cursor: pointer; font-family: inherit; }
+  button:hover:not(:disabled) { background: #e8e8e8; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .step-counter { font-size: 0.8rem; color: #666; margin-left: auto; }
+
+  .card { border: 1px solid #e0e0e0; border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+  .phase-badge { display: inline-block; font-size: 0.7rem; font-weight: 600; padding: 2px 10px; border-radius: 99px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .phase-find   { background: #e8f0fe; color: #1a56db; }
+  .phase-rev    { background: #fef3c7; color: #92400e; }
+  .phase-merge  { background: #d1fae5; color: #065f46; }
+  .phase-done   { background: #f3e8ff; color: #6b21a8; }
+
+  .step-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
+  .step-desc  { font-size: 0.82rem; color: #444; line-height: 1.5; margin-bottom: 14px; }
+
+  /* Linked list row */
+  .list-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin-bottom: 8px; }
+  .list-label { font-size: 0.72rem; color: #888; width: 60px; flex-shrink: 0; }
+  .node { display: flex; align-items: center; }
+  .node-box {
+    width: 36px; height: 36px; border-radius: 50%; border: 2px solid #ccc;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 600; background: #fff;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .node-box.highlight-slow { border-color: #1a56db; background: #e8f0fe; }
+  .node-box.highlight-fast { border-color: #e63946; background: #ffe0e0; }
+  .node-box.highlight-both { border-color: #7c3aed; background: #f3e8ff; }
+  .node-box.highlight-prev { border-color: #059669; background: #d1fae5; }
+  .node-box.highlight-second { border-color: #d97706; background: #fef3c7; }
+  .node-box.highlight-first { border-color: #1a56db; background: #e8f0fe; }
+  .node-box.highlight-result { border-color: #7c3aed; background: #f3e8ff; }
+  .arrow { font-size: 0.9rem; color: #aaa; margin: 0 3px; }
+  .null-label { font-size: 0.7rem; color: #aaa; margin-left: 4px; }
+
+  .pointer-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; margin-left: 60px; }
+  .ptr { font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .ptr-slow   { background: #e8f0fe; color: #1a56db; }
+  .ptr-fast   { background: #ffe0e0; color: #e63946; }
+  .ptr-prev   { background: #d1fae5; color: #059669; }
+  .ptr-second { background: #fef3c7; color: #d97706; }
+  .ptr-first  { background: #e8f0fe; color: #1a56db; }
+
+  .divider { border: none; border-top: 1px solid #eee; margin: 10px 0; }
+  .code-line { font-family: monospace; font-size: 0.78rem; background: #f8f8f8; border-radius: 5px; padding: 6px 10px; color: #333; }
+</style>
+</head>
+<body>
+
+<h1>143. Reorder List</h1>
+<p class="subtitle">Input: [1, 2, 3, 4, 5] → Output: [1, 5, 2, 4, 3]</p>
+
+<div class="controls">
+  <button id="btn-prev" onclick="go(-1)" disabled>← Prev</button>
+  <button id="btn-next" onclick="go(1)">Next →</button>
+  <span class="step-counter" id="counter">Step 1 / N</span>
+</div>
+
+<div id="card" class="card"></div>
+
+<script>
+// Each step: { phase, title, desc, codeLine, lists: [{label, nodes:[{val,cls}], ptrs:[{label,cls}]}] }
+
+const steps = [
+  // ── Phase 1: Find Middle ──
+  {
+    phase: "find", phaseLabel: "Phase 1: Find Middle",
+    title: "Initialize slow & fast pointers",
+    desc: "slow starts at head (1), fast starts at head.next (2). We'll advance fast two steps for every one step of slow, so when fast hits the end, slow is at the middle.",
+    code: "slow, fast = head, head.next",
+    lists: [
+      { label: "list", nodes: [1,2,3,4,5].map((v,i) => ({val:v, cls: i===0?'highlight-slow':''})), ptrs: [{label:"slow → 1", cls:"ptr-slow"}, {label:"fast → 2", cls:"ptr-fast"}] }
+    ]
+  },
+  {
+    phase: "find", phaseLabel: "Phase 1: Find Middle",
+    title: "Advance: slow=2, fast=4",
+    desc: "slow moves one step → 2. fast moves two steps → 4. fast and fast.next both exist, so we continue.",
+    code: "slow = slow.next  →  2\nfast = fast.next.next  →  4",
+    lists: [
+      { label: "list", nodes: [1,2,3,4,5].map((v,i) => ({val:v, cls: i===1?'highlight-slow': i===3?'highlight-fast':''})), ptrs: [{label:"slow → 2", cls:"ptr-slow"}, {label:"fast → 4", cls:"ptr-fast"}] }
+    ]
+  },
+  {
+    phase: "find", phaseLabel: "Phase 1: Find Middle",
+    title: "fast.next is None → slow is the middle",
+    desc: "fast=4, fast.next=5, fast.next.next=None → loop exits. slow=3 is the middle node. The first half is [1→2→3] and the second half starts at slow.next=4.",
+    code: "while fast and fast.next: ...  ← exits here",
+    lists: [
+      { label: "list", nodes: [1,2,3,4,5].map((v,i) => ({val:v, cls: i===2?'highlight-slow': i===4?'highlight-fast':''})), ptrs: [{label:"slow → 3 (middle)", cls:"ptr-slow"}, {label:"fast → 5", cls:"ptr-fast"}] }
+    ]
+  },
+
+  // ── Phase 2: Reverse Second Half ──
+  {
+    phase: "rev", phaseLabel: "Phase 2: Reverse Second Half",
+    title: "Cut the list; init second & prev",
+    desc: "second = slow.next = node(4). Then slow.next = None, cutting the first half. prev = None. We'll reverse [4→5] in-place.",
+    code: "second = slow.next\nprev = slow.next = None",
+    lists: [
+      { label: "1st half", nodes: [1,2,3].map(v=>({val:v,cls:''})), ptrs:[] },
+      { label: "2nd half", nodes: [4,5].map((v,i)=>({val:v,cls:i===0?'highlight-second':''})), ptrs:[{label:"second → 4",cls:"ptr-second"},{label:"prev → None",cls:"ptr-prev"}] }
+    ]
+  },
+  {
+    phase: "rev", phaseLabel: "Phase 2: Reverse Second Half",
+    title: "Reverse iteration 1: node 4",
+    desc: "tmp = second.next = 5. second.next = prev = None. prev = 4. second = tmp = 5. Node 4 now points to None.",
+    code: "tmp=5; node4.next=None; prev=4; second=5",
+    lists: [
+      { label: "1st half", nodes:[1,2,3].map(v=>({val:v,cls:''})), ptrs:[] },
+      { label: "reversed", nodes:[{val:4,cls:'highlight-prev'}], ptrs:[{label:"prev → 4",cls:"ptr-prev"}] },
+      { label: "remain",   nodes:[{val:5,cls:'highlight-second'}], ptrs:[{label:"second → 5",cls:"ptr-second"}] }
+    ]
+  },
+  {
+    phase: "rev", phaseLabel: "Phase 2: Reverse Second Half",
+    title: "Reverse iteration 2: node 5",
+    desc: "tmp = second.next = None. second.next = prev = 4. prev = 5. second = None. Loop exits. Reversed second half: [5→4→None].",
+    code: "tmp=None; node5.next=4; prev=5; second=None",
+    lists: [
+      { label: "1st half", nodes:[1,2,3].map(v=>({val:v,cls:''})), ptrs:[] },
+      { label: "reversed", nodes:[{val:5,cls:'highlight-prev'},{val:4,cls:''}], ptrs:[{label:"prev → 5 (head of reversed)",cls:"ptr-prev"}] }
+    ]
+  },
+
+  // ── Phase 3: Merge ──
+  {
+    phase: "merge", phaseLabel: "Phase 3: Merge Two Halves",
+    title: "Init first & second for merge",
+    desc: "first = head = 1. second = prev = 5 (head of reversed half). We'll interleave: take one from first, one from second, repeat.",
+    code: "first, second = head, prev",
+    lists: [
+      { label: "1st", nodes:[1,2,3].map((v,i)=>({val:v,cls:i===0?'highlight-first':''})), ptrs:[{label:"first → 1",cls:"ptr-first"}] },
+      { label: "2nd", nodes:[5,4].map((v,i)=>({val:v,cls:i===0?'highlight-second':''})), ptrs:[{label:"second → 5",cls:"ptr-second"}] }
+    ]
+  },
+  {
+    phase: "merge", phaseLabel: "Phase 3: Merge Two Halves",
+    title: "Merge step 1: insert 5 after 1",
+    desc: "tmp1=first.next=2, tmp2=second.next=4. first.next=5, second.next=2. Advance: first=2, second=4. Result so far: 1→5→2→...",
+    code: "tmp1,tmp2=2,4; 1.next=5; 5.next=2; first=2,second=4",
+    lists: [
+      { label: "result", nodes:[{val:1,cls:''},{val:5,cls:'highlight-result'},{val:2,cls:'highlight-first'}], ptrs:[{label:"first → 2",cls:"ptr-first"}] },
+      { label: "remain", nodes:[{val:4,cls:'highlight-second'}], ptrs:[{label:"second → 4",cls:"ptr-second"}] }
+    ]
+  },
+  {
+    phase: "merge", phaseLabel: "Phase 3: Merge Two Halves",
+    title: "Merge step 2: insert 4 after 2",
+    desc: "tmp1=first.next=3, tmp2=second.next=None. first.next=4, second.next=3. Advance: first=3, second=None. Result: 1→5→2→4→3→...",
+    code: "tmp1,tmp2=3,None; 2.next=4; 4.next=3; first=3,second=None",
+    lists: [
+      { label: "result", nodes:[{val:1,cls:''},{val:5,cls:''},{val:2,cls:''},{val:4,cls:'highlight-result'},{val:3,cls:'highlight-first'}], ptrs:[{label:"first → 3",cls:"ptr-first"}] },
+      { label: "remain", nodes:[], ptrs:[{label:"second → None (done!)",cls:"ptr-second"}] }
+    ]
+  },
+  {
+    phase: "done", phaseLabel: "Done!",
+    title: "second is None → merge complete",
+    desc: "The while loop condition `while second` is False. The list is fully reordered in-place.",
+    code: "return  # implicit, list modified in-place",
+    lists: [
+      { label: "final", nodes:[1,5,2,4,3].map(v=>({val:v,cls:'highlight-result'})), ptrs:[] }
+    ]
+  }
+];
+
+let idx = 0;
+
+function phaseClass(p) {
+  return { find:'phase-find', rev:'phase-rev', merge:'phase-merge', done:'phase-done' }[p] || '';
+}
+
+function renderList(listObj) {
+  let html = `<div class="list-row">`;
+  html += `<span class="list-label">${listObj.label}</span>`;
+  if (listObj.nodes.length === 0) {
+    html += `<span class="null-label">∅ empty</span>`;
+  } else {
+    listObj.nodes.forEach((n, i) => {
+      html += `<div class="node"><div class="node-box ${n.cls}">${n.val}</div>`;
+      if (i < listObj.nodes.length - 1) html += `<span class="arrow">→</span>`;
+      html += `</div>`;
+    });
+    html += `<span class="null-label">→ None</span>`;
+  }
+  html += `</div>`;
+  if (listObj.ptrs && listObj.ptrs.length) {
+    html += `<div class="pointer-row">`;
+    listObj.ptrs.forEach(p => { html += `<span class="ptr ${p.cls}">${p.label}</span>`; });
+    html += `</div>`;
+  }
+  return html;
+}
+
+function render() {
+  const s = steps[idx];
+  let html = `
+    <span class="phase-badge ${phaseClass(s.phase)}">${s.phaseLabel}</span>
+    <div class="step-title">${s.title}</div>
+    <div class="step-desc">${s.desc}</div>
+    <hr class="divider">
+  `;
+  s.lists.forEach(l => { html += renderList(l); });
+  html += `<hr class="divider"><div class="code-line">${s.code.replace(/\n/g,'<br>')}</div>`;
+
+  document.getElementById('card').innerHTML = html;
+  document.getElementById('counter').textContent = `Step ${idx+1} / ${steps.length}`;
+  document.getElementById('btn-prev').disabled = idx === 0;
+  document.getElementById('btn-next').disabled = idx === steps.length - 1;
+}
+
+function go(dir) { idx = Math.max(0, Math.min(steps.length-1, idx+dir)); render(); }
+
+render();
+</script>
+</body>
+</html>
