@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reverse Linked List — Pointer Visualizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #fff; color: #1a1a1a; padding: 2rem; max-width: 600px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+  .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
+  .btn { padding: 6px 16px; border: 0.5px solid #ccc; border-radius: 8px; background: transparent; color: #1a1a1a; cursor: pointer; font-size: 14px; }
+  .btn:hover { background: #f5f5f5; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .step-label { font-size: 13px; color: #888; }
+  .phase-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-bottom: 8px; }
+  .phase-init { background: #F0EEF8; color: #4A3A8A; }
+  .phase-loop { background: #E6F1FB; color: #185FA5; }
+  .phase-done { background: #EAF3DE; color: #3B6D11; }
+  .step-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .step-desc { font-size: 13px; color: #666; margin-bottom: 1rem; line-height: 1.6; }
+  .legend { display: flex; gap: 16px; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #555; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .code-block { background: #fafafa; border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; margin-bottom: 1.25rem; }
+  .code-line { font-family: monospace; font-size: 12px; line-height: 1.9; color: #bbb; display: block; padding: 0 3px; border-radius: 3px; }
+  .code-line.active { color: #1a1a1a; background: #efefef; }
+</style>
+</head>
+<body>
+
+<h1>206. Reverse Linked List — Pointer Visualizer</h1>
+<p class="subtitle">head = [1→2→3→4→5] · step-by-step pointer trace</p>
+
+<div class="controls">
+  <button class="btn" id="prevBtn" onclick="move(-1)">← prev</button>
+  <button class="btn" id="nextBtn" onclick="move(1)">next →</button>
+  <span class="step-label" id="stepCounter"></span>
+</div>
+
+<div class="phase-badge" id="phaseBadge"></div>
+<div class="step-title" id="stepTitle"></div>
+<div class="step-desc" id="stepDesc"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#378ADD"></div>prev</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#D85A30"></div>curr</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#888"></div>nxt</div>
+</div>
+
+<div class="code-block" id="codeBlock"></div>
+
+<svg id="diagram" width="100%" viewBox="0 0 560 175" style="max-width:560px;display:block;margin-bottom:0.5rem;"></svg>
+
+<script>
+const NODES = [1,2,3,4,5];
+
+// prev: node index 0-4, or -1 = None-left
+// curr: node index 0-4, or 5 = None-right
+// nxt:  node index 0-4, or 5 = None, or null = hidden
+// reversed: indices whose arrow has been flipped
+const steps = [
+  { phase:"init", title:"curr = head,  prev = None",
+    code:[0,1], prev:-1, curr:0, nxt:null, reversed:[],
+    desc:"curr points at node 1 (head). prev = None — nothing behind us yet. The while loop hasn't started." },
+
+  { phase:"loop", title:"Iter 1 — nxt = curr.next",
+    code:[3], prev:-1, curr:0, nxt:1, reversed:[],
+    desc:"Save nxt = node 2 before we lose the reference. curr.next is about to be overwritten." },
+  { phase:"loop", title:"Iter 1 — curr.next = prev  (flip arrow)",
+    code:[4], prev:-1, curr:0, nxt:1, reversed:[0],
+    desc:"Node 1's .next now points to None (prev). The arrow reverses. Node 1 is disconnected from node 2." },
+  { phase:"loop", title:"Iter 1 — prev = curr,  curr = nxt",
+    code:[5,6], prev:0, curr:1, nxt:null, reversed:[0],
+    desc:"prev advances to node 1. curr advances to node 2 (was saved as nxt). One node fully reversed." },
+
+  { phase:"loop", title:"Iter 2 — nxt = curr.next",
+    code:[3], prev:0, curr:1, nxt:2, reversed:[0],
+    desc:"Save nxt = node 3." },
+  { phase:"loop", title:"Iter 2 — curr.next = prev  (flip arrow)",
+    code:[4], prev:0, curr:1, nxt:2, reversed:[0,1],
+    desc:"Node 2's .next now points back to node 1." },
+  { phase:"loop", title:"Iter 2 — prev = curr,  curr = nxt",
+    code:[5,6], prev:1, curr:2, nxt:null, reversed:[0,1],
+    desc:"prev → node 2. curr → node 3. Two nodes reversed." },
+
+  { phase:"loop", title:"Iter 3 — nxt = curr.next",
+    code:[3], prev:1, curr:2, nxt:3, reversed:[0,1],
+    desc:"Save nxt = node 4." },
+  { phase:"loop", title:"Iter 3 — curr.next = prev  (flip arrow)",
+    code:[4], prev:1, curr:2, nxt:3, reversed:[0,1,2],
+    desc:"Node 3's .next now points to node 2." },
+  { phase:"loop", title:"Iter 3 — prev = curr,  curr = nxt",
+    code:[5,6], prev:2, curr:3, nxt:null, reversed:[0,1,2],
+    desc:"prev → node 3. curr → node 4. Three nodes reversed." },
+
+  { phase:"loop", title:"Iter 4 — nxt = curr.next",
+    code:[3], prev:2, curr:3, nxt:4, reversed:[0,1,2],
+    desc:"Save nxt = node 5." },
+  { phase:"loop", title:"Iter 4 — curr.next = prev  (flip arrow)",
+    code:[4], prev:2, curr:3, nxt:4, reversed:[0,1,2,3],
+    desc:"Node 4's .next now points to node 3." },
+  { phase:"loop", title:"Iter 4 — prev = curr,  curr = nxt",
+    code:[5,6], prev:3, curr:4, nxt:null, reversed:[0,1,2,3],
+    desc:"prev → node 4. curr → node 5. Four nodes reversed." },
+
+  { phase:"loop", title:"Iter 5 — nxt = curr.next",
+    code:[3], prev:3, curr:4, nxt:5, reversed:[0,1,2,3],
+    desc:"nxt = curr.next = None (end of list)." },
+  { phase:"loop", title:"Iter 5 — curr.next = prev  (flip arrow)",
+    code:[4], prev:3, curr:4, nxt:5, reversed:[0,1,2,3,4],
+    desc:"Node 5's .next now points to node 4. All arrows flipped!" },
+  { phase:"loop", title:"Iter 5 — prev = curr,  curr = nxt",
+    code:[5,6], prev:4, curr:5, nxt:null, reversed:[0,1,2,3,4],
+    desc:"prev → node 5. curr = None → while condition is False, loop exits." },
+
+  { phase:"done", title:"return prev  →  new head = 5  ✓",
+    code:[8], prev:4, curr:5, nxt:null, reversed:[0,1,2,3,4],
+    desc:"prev points to node 5, the new head of the reversed list: 5→4→3→2→1 ✓" }
+];
+
+const codeLines = [
+  "  curr = head",
+  "  prev = None",
+  "  while curr:",
+  "    nxt = curr.next",
+  "    curr.next = prev",
+  "    prev = curr",
+  "    curr = nxt",
+  "  # exits when curr = None",
+  "  return prev"
+];
+
+function buildCode() {
+  document.getElementById('codeBlock').innerHTML =
+    codeLines.map((l,i) => `<span class="code-line" id="cl${i}">${l}</span>`).join('');
+}
+
+const NX0=55, GAP=96, NY=68, R=24;
+function nx(i){ return NX0 + i*GAP; }
+
+function render() {
+  const s = steps[cur];
+  document.getElementById('stepCounter').textContent = `step ${cur+1} of ${steps.length}`;
+  document.getElementById('prevBtn').disabled = cur===0;
+  document.getElementById('nextBtn').disabled = cur===steps.length-1;
+
+  const badge = document.getElementById('phaseBadge');
+  badge.className = 'phase-badge phase-'+s.phase;
+  badge.textContent = s.phase==='init' ? 'initialize' : s.phase==='loop' ? 'while loop' : 'done';
+  document.getElementById('stepTitle').textContent = s.title;
+  document.getElementById('stepDesc').textContent  = s.desc;
+
+  codeLines.forEach((_,i) => {
+    document.getElementById('cl'+i).className = 'code-line'+(s.code.includes(i)?' active':'');
+  });
+
+  const svg = document.getElementById('diagram');
+  svg.innerHTML = `<defs>
+    <marker id="ag" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><polygon points="0 0,6 3,0 6" fill="#ccc"/></marker>
+    <marker id="ab" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><polygon points="0 0,6 3,0 6" fill="#378ADD"/></marker>
+  </defs>`;
+
+  // Edges
+  for (let i=0; i<NODES.length; i++) {
+    if (s.reversed.includes(i)) {
+      if (i===0) {
+        // node 0 → None (left)
+        const ln = document.createElementNS('http://www.w3.org/2000/svg','line');
+        ln.setAttribute('x1',nx(0)-R); ln.setAttribute('y1',NY);
+        ln.setAttribute('x2',nx(0)-R-26); ln.setAttribute('y2',NY);
+        ln.setAttribute('stroke','#378ADD'); ln.setAttribute('stroke-width','1.5');
+        ln.setAttribute('marker-end','url(#ab)'); svg.appendChild(ln);
+        const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+        t.setAttribute('x',nx(0)-R-30); t.setAttribute('y',NY-9);
+        t.setAttribute('font-size','10'); t.setAttribute('fill','#aaa');
+        t.setAttribute('text-anchor','middle'); t.setAttribute('font-family','monospace');
+        t.textContent='None'; svg.appendChild(t);
+      }
+      if (i>0) {
+        // curved arc below: from node i back to node i-1
+        const x1=nx(i), x2=nx(i-1), mx=(x1+x2)/2;
+        const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+        path.setAttribute('d',`M ${x1-R+4} ${NY+8} Q ${mx} ${NY+60} ${x2+R+4} ${NY+8}`);
+        path.setAttribute('stroke','#378ADD'); path.setAttribute('stroke-width','1.5');
+        path.setAttribute('fill','none'); path.setAttribute('marker-end','url(#ab)');
+        svg.appendChild(path);
+      }
+    } else if (i<NODES.length-1) {
+      const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1',nx(i)+R); ln.setAttribute('y1',NY);
+      ln.setAttribute('x2',nx(i+1)-R-6); ln.setAttribute('y2',NY);
+      ln.setAttribute('stroke','#ccc'); ln.setAttribute('stroke-width','1.5');
+      ln.setAttribute('marker-end','url(#ag)'); svg.appendChild(ln);
+    } else {
+      // last node → None (right), only if not yet reversed
+      const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1',nx(i)+R); ln.setAttribute('y1',NY);
+      ln.setAttribute('x2',nx(i)+R+28); ln.setAttribute('y2',NY);
+      ln.setAttribute('stroke','#ccc'); ln.setAttribute('stroke-width','1.5');
+      ln.setAttribute('marker-end','url(#ag)'); svg.appendChild(ln);
+      const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',nx(i)+R+38); t.setAttribute('y',NY+4);
+      t.setAttribute('font-size','10'); t.setAttribute('fill','#aaa');
+      t.setAttribute('font-family','monospace'); t.textContent='None'; svg.appendChild(t);
+    }
+  }
+
+  // Nodes
+  for (let i=0; i<NODES.length; i++) {
+    const x=nx(i);
+    const isPrev = i===s.prev;
+    const isCurr = i===s.curr;
+    const isNxt  = s.nxt!==null && i===s.nxt && s.nxt<NODES.length;
+    const isDone = s.phase==='done';
+
+    let fill='#f5f5f5', stroke='#ccc', sw='1';
+    if (isDone)      { fill='#EAF3DE'; stroke='#639922'; sw='2'; }
+    else if (isCurr) { fill='#FAECE7'; stroke='#D85A30'; sw='2'; }
+    else if (isPrev) { fill='#E6F1FB'; stroke='#378ADD'; sw='2'; }
+
+    const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',x); c.setAttribute('cy',NY); c.setAttribute('r',R);
+    c.setAttribute('fill',fill); c.setAttribute('stroke',stroke); c.setAttribute('stroke-width',sw);
+    svg.appendChild(c);
+
+    const txt=document.createElementNS('http://www.w3.org/2000/svg','text');
+    txt.setAttribute('x',x); txt.setAttribute('y',NY+5);
+    txt.setAttribute('text-anchor','middle'); txt.setAttribute('font-size','14');
+    txt.setAttribute('font-weight','500'); txt.setAttribute('fill','#1a1a1a');
+    txt.setAttribute('font-family','system-ui,sans-serif'); txt.textContent=NODES[i];
+    svg.appendChild(txt);
+
+    const ptrs=[];
+    if (isPrev) ptrs.push({label:'prev',color:'#378ADD'});
+    if (isCurr) ptrs.push({label:'curr',color:'#D85A30'});
+    if (isNxt)  ptrs.push({label:'nxt', color:'#888'});
+    ptrs.forEach((p,pi)=>{
+      const off = ptrs.length>1 ? (pi===0?-14:14):0;
+      const lt=document.createElementNS('http://www.w3.org/2000/svg','text');
+      lt.setAttribute('x',x+off); lt.setAttribute('y',NY+R+14);
+      lt.setAttribute('text-anchor','middle'); lt.setAttribute('font-size','10');
+      lt.setAttribute('font-weight','600'); lt.setAttribute('fill',p.color);
+      lt.setAttribute('font-family','monospace'); lt.textContent=p.label;
+      svg.appendChild(lt);
+    });
+  }
+
+  // curr = None box (right side)
+  if (s.curr>=NODES.length) {
+    const x=nx(NODES.length-1)+GAP-10;
+    const box=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    box.setAttribute('x',x-22); box.setAttribute('y',NY-14);
+    box.setAttribute('width',48); box.setAttribute('height',28);
+    box.setAttribute('rx',6); box.setAttribute('fill','#f5f5f5');
+    box.setAttribute('stroke','#ccc'); box.setAttribute('stroke-width','0.5');
+    svg.appendChild(box);
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',x+2); t.setAttribute('y',NY+4);
+    t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','10');
+    t.setAttribute('fill','#888'); t.setAttribute('font-family','monospace');
+    t.textContent='None'; svg.appendChild(t);
+    const lt=document.createElementNS('http://www.w3.org/2000/svg','text');
+    lt.setAttribute('x',x+2); lt.setAttribute('y',NY+R+14);
+    lt.setAttribute('text-anchor','middle'); lt.setAttribute('font-size','10');
+    lt.setAttribute('font-weight','600'); lt.setAttribute('fill','#D85A30');
+    lt.setAttribute('font-family','monospace'); lt.textContent='curr'; svg.appendChild(lt);
+  }
+
+  // done banner
+  if (s.phase==='done') {
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',280); t.setAttribute('y',162);
+    t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','12');
+    t.setAttribute('fill','#3B6D11'); t.setAttribute('font-family','system-ui,sans-serif');
+    t.textContent='5 → 4 → 3 → 2 → 1   ✓'; svg.appendChild(t);
+  }
+}
+
+let cur=0;
+function move(d){ cur=Math.max(0,Math.min(steps.length-1,cur+d)); render(); }
+buildCode();
+render();
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight') move(1);
+  if(e.key==='ArrowLeft')  move(-1);
+});
+</script>
+</body>
+</html>
