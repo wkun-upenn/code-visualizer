@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SV Scheduling Regions</title>
+<style>
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: white;
+    color: #111;
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 0 16px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 4px 0;
+  }
+  .subtitle {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+  }
+  button {
+    background: white;
+    border: 1px solid #ccc;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover:not(:disabled) {
+    background: #eee;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .step-counter {
+    font-size: 13px;
+    color: #555;
+    margin-left: auto;
+  }
+  .phase-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .phase-preponed  { background: #fce4ec; color: #880e4f; }
+  .phase-active    { background: #e3f2fd; color: #0d47a1; }
+  .phase-inactive  { background: #f3e5f5; color: #4a148c; }
+  .phase-nba       { background: #e8f5e9; color: #1b5e20; }
+  .phase-observed  { background: #fff8e1; color: #e65100; }
+  .phase-reactive  { background: #fff3e0; color: #bf360c; }
+  .phase-postponed { background: #eceff1; color: #263238; }
+
+  .step-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+  }
+  .step-desc {
+    font-size: 13px;
+    color: #444;
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+
+  /* Code block */
+  .code-block {
+    background: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 12px 14px;
+    font-family: "SF Mono", Consolas, Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.65;
+    margin-bottom: 16px;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .code-line {
+    display: block;
+    padding: 2px 6px;
+    margin: 0 -6px;
+    border-radius: 3px;
+    transition: background 0.2s;
+  }
+  .highlight-preponed  { background: #fce4ec; }
+  .highlight-active    { background: #e3f2fd; }
+  .highlight-inactive  { background: #f3e5f5; }
+  .highlight-nba       { background: #e8f5e9; }
+  .highlight-observed  { background: #fff8e1; }
+  .highlight-reactive  { background: #fff3e0; }
+  .highlight-postponed { background: #eceff1; }
+
+  .kw    { color: #0d47a1; font-weight: 600; }
+  .type  { color: #1b5e20; }
+  .num   { color: #b71c1c; }
+  .str   { color: #4a148c; }
+  .cmt   { color: #888; font-style: italic; }
+  .sys   { color: #e65100; }
+
+  /* Region diagram */
+  .region-diagram {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 14px;
+    font-size: 10px;
+  }
+  .region-box {
+    flex: 1;
+    padding: 8px 4px;
+    text-align: center;
+    border-radius: 3px;
+    background: #f0f0f0;
+    color: #999;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+  .region-box.active-region {
+    color: white;
+    border-color: #333;
+  }
+  .region-box.active-region.r-preponed  { background: #c2185b; }
+  .region-box.active-region.r-active    { background: #1976d2; }
+  .region-box.active-region.r-inactive  { background: #7b1fa2; }
+  .region-box.active-region.r-nba       { background: #388e3c; }
+  .region-box.active-region.r-observed  { background: #f57c00; }
+  .region-box.active-region.r-reactive  { background: #d84315; }
+  .region-box.active-region.r-postponed { background: #455a64; }
+
+  .values {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    margin-bottom: 12px;
+  }
+  .values .label { color: #9cdcfe; }
+  .values .val   { color: #ce9178; }
+  .values .note  { color: #6a9955; font-style: italic; }
+
+  .legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    font-size: 11px;
+    color: #555;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #eee;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>SystemVerilog Scheduling Regions</h1>
+<p class="subtitle">Step through one <code>posedge clk</code> timestep and see which region each statement runs in.</p>
+
+<div class="controls">
+  <button id="prev">← Prev</button>
+  <button id="next">Next →</button>
+  <span class="step-counter" id="counter">Step 1 / 9</span>
+</div>
+
+<div class="region-diagram" id="diagram"></div>
+
+<span class="phase-badge" id="badge">Preponed</span>
+<div class="step-title" id="title">Timestep begins</div>
+<div class="step-desc" id="desc">Loading...</div>
+
+<div class="code-block" id="code"></div>
+
+<div class="values" id="values"></div>
+
+<div class="legend">
+  <div class="legend-item"><div class="swatch" style="background:#c2185b"></div>Preponed: sample for assertions</div>
+  <div class="legend-item"><div class="swatch" style="background:#1976d2"></div>Active: blocking, assign, =</div>
+  <div class="legend-item"><div class="swatch" style="background:#7b1fa2"></div>Inactive: #0 delays</div>
+  <div class="legend-item"><div class="swatch" style="background:#388e3c"></div>NBA: LHS of <= writes</div>
+  <div class="legend-item"><div class="swatch" style="background:#f57c00"></div>Observed: assertion eval</div>
+  <div class="legend-item"><div class="swatch" style="background:#d84315"></div>Reactive: program blocks</div>
+  <div class="legend-item"><div class="swatch" style="background:#455a64"></div>Postponed: $monitor, $strobe</div>
+</div>
+
+<script>
+const regions = [
+  {key:'preponed',  short:'Preponed'},
+  {key:'active',    short:'Active'},
+  {key:'inactive',  short:'Inactive'},
+  {key:'nba',       short:'NBA'},
+  {key:'observed',  short:'Observed'},
+  {key:'reactive',  short:'Reactive'},
+  {key:'postponed', short:'Postponed'}
+];
+
+// Code lines. Each line has an id we can highlight.
+const codeLines = [
+  { id: 'L1',  html: '<span class="kw">module</span> demo;' },
+  { id: 'L2',  html: '  <span class="type">logic</span> clk, d, q_nba, q_blk;' },
+  { id: 'L3',  html: '  <span class="type">logic</span> y_assign, y_comb;' },
+  { id: 'L4',  html: '' },
+  { id: 'L5',  html: '  <span class="cmt">// --- Continuous assigns ---</span>' },
+  { id: 'L6',  html: '  <span class="kw">assign</span> y_assign = d & <span class="num">1</span>\'b1;' },
+  { id: 'L7',  html: '  <span class="kw">always_comb</span> y_comb = d | <span class="num">1</span>\'b0;' },
+  { id: 'L8',  html: '' },
+  { id: 'L9',  html: '  <span class="cmt">// --- Flops: blocking vs non-blocking ---</span>' },
+  { id: 'L10', html: '  <span class="kw">always_ff</span> @(<span class="kw">posedge</span> clk) q_nba <= d;' },
+  { id: 'L11', html: '  <span class="kw">always</span>    @(<span class="kw">posedge</span> clk) q_blk  = d;' },
+  { id: 'L12', html: '' },
+  { id: 'L13', html: '  <span class="cmt">// --- Assertion ---</span>' },
+  { id: 'L14', html: '  <span class="kw">assert property</span> (@(<span class="kw">posedge</span> clk) d |-> ##<span class="num">1</span> q_nba);' },
+  { id: 'L15', html: '' },
+  { id: 'L16', html: '  <span class="cmt">// --- TB observation ---</span>' },
+  { id: 'L17', html: '  <span class="kw">initial</span> <span class="sys">$monitor</span>(<span class="str">"q_nba=%b q_blk=%b"</span>, q_nba, q_blk);' },
+  { id: 'L18', html: '  <span class="kw">initial</span> <span class="sys">$strobe</span> (<span class="str">"final q_nba=%b"</span>, q_nba);' },
+  { id: 'L19', html: '<span class="kw">endmodule</span>' }
+];
+
+// 9 steps through one timestep (posedge clk with d changing 0->1 just before)
+const steps = [
+  {
+    region: 'preponed',
+    title: 'Preponed — sample values',
+    desc: 'At the very start of the timestep, assertion machinery samples signal values BEFORE any updates. This is why SVA sees "pre-edge" values on sampled variables.',
+    lines: ['L14'],
+    values: [
+      { label: 'Pre-edge sample', val: 'd = 1, q_nba = 0, q_blk = 0' },
+      { note: '// SVA samples these stable values' }
+    ]
+  },
+  {
+    region: 'active',
+    title: 'Active — continuous assignments fire',
+    desc: 'posedge clk event triggers the Active region. Continuous assigns (assign, always_comb) re-evaluate whenever their RHS changes. They run here.',
+    lines: ['L6', 'L7'],
+    values: [
+      { label: 'd', val: '1' },
+      { label: 'y_assign', val: '1  (assign computed)' },
+      { label: 'y_comb',   val: '1  (always_comb computed)' }
+    ]
+  },
+  {
+    region: 'active',
+    title: 'Active — blocking always fires',
+    desc: 'always @(posedge clk) with blocking "=" executes entirely in the Active region. q_blk is updated IMMEDIATELY — any other Active code reading q_blk now sees the new value (race risk!).',
+    lines: ['L11'],
+    values: [
+      { label: 'd', val: '1' },
+      { label: 'q_blk', val: '1  ← updated NOW (blocking)' },
+      { note: '// Anything reading q_blk in Active sees new value' }
+    ]
+  },
+  {
+    region: 'active',
+    title: 'Active — always_ff RHS evaluated',
+    desc: 'The RHS of non-blocking assignments is READ in the Active region. The write is deferred to NBA. So d is sampled here, but q_nba is not yet updated.',
+    lines: ['L10'],
+    values: [
+      { label: 'd (RHS read)', val: '1' },
+      { label: 'q_nba', val: '0  ← NOT yet updated' },
+      { note: '// NBA write scheduled for later' }
+    ]
+  },
+  {
+    region: 'inactive',
+    title: 'Inactive — #0 delays',
+    desc: 'Any #0 delayed statements run here. Rarely used in RTL — mostly a testbench escape hatch to reorder events. Nothing in our example lands here.',
+    lines: [],
+    values: [
+      { note: '// No #0 delays in this module' }
+    ]
+  },
+  {
+    region: 'nba',
+    title: 'NBA — non-blocking writes commit',
+    desc: 'Now the deferred LHS writes from <= happen. q_nba finally updates. This is the KEY to flop semantics: all flops update together at the end, so they see each other\'s OLD values.',
+    lines: ['L10'],
+    values: [
+      { label: 'q_nba', val: '1  ← updated NOW (NBA)' },
+      { label: 'q_blk', val: '1  (already updated in Active)' },
+      { note: '// assign / always_comb re-fire if q_nba feeds them' }
+    ]
+  },
+  {
+    region: 'observed',
+    title: 'Observed — assertions evaluate',
+    desc: 'Property expressions are checked here using values sampled in Preponed. The assertion sees pre-edge d and will check q_nba on the NEXT cycle.',
+    lines: ['L14'],
+    values: [
+      { label: 'Sampled d', val: '1 (from Preponed)' },
+      { label: 'Assertion', val: 'd |-> ##1 q_nba  → check next cycle' }
+    ]
+  },
+  {
+    region: 'reactive',
+    title: 'Reactive — program blocks',
+    desc: 'Code inside program blocks and some testbench constructs run here, AFTER the design has settled. Separates TB from DUT to prevent races. Our example has no program block.',
+    lines: [],
+    values: [
+      { note: '// No program blocks in this module' }
+    ]
+  },
+  {
+    region: 'postponed',
+    title: 'Postponed — $monitor and $strobe',
+    desc: 'At the very end of the timestep, $monitor and $strobe read FINAL settled values. This is why they show correct flop outputs while $display in Active may show stale ones.',
+    lines: ['L17', 'L18'],
+    values: [
+      { label: '$monitor prints', val: 'q_nba=1 q_blk=1' },
+      { label: '$strobe prints',  val: 'final q_nba=1' },
+      { note: '// These see the settled values — safe to use' }
+    ]
+  }
+];
+
+let idx = 0;
+
+function render() {
+  const step = steps[idx];
+
+  // Counter
+  document.getElementById('counter').textContent = `Step ${idx+1} / ${steps.length}`;
+
+  // Buttons
+  document.getElementById('prev').disabled = (idx === 0);
+  document.getElementById('next').disabled = (idx === steps.length - 1);
+
+  // Badge
+  const badge = document.getElementById('badge');
+  badge.textContent = regions.find(r => r.key === step.region).short;
+  badge.className = 'phase-badge phase-' + step.region;
+
+  // Title + desc
+  document.getElementById('title').textContent = step.title;
+  document.getElementById('desc').textContent = step.desc;
+
+  // Region diagram
+  const dia = document.getElementById('diagram');
+  dia.innerHTML = regions.map(r => {
+    const on = (r.key === step.region) ? `active-region r-${r.key}` : '';
+    return `<div class="region-box ${on}">${r.short}</div>`;
+  }).join('');
+
+  // Code block
+  const cb = document.getElementById('code');
+  cb.innerHTML = codeLines.map(line => {
+    const hl = step.lines.includes(line.id) ? ` highlight-${step.region}` : '';
+    return `<span class="code-line${hl}">${line.html || '&nbsp;'}</span>`;
+  }).join('');
+
+  // Values panel
+  const vb = document.getElementById('values');
+  vb.innerHTML = step.values.map(v => {
+    if (v.note) return `<div class="note">${v.note}</div>`;
+    return `<div><span class="label">${v.label}:</span> <span class="val">${v.val}</span></div>`;
+  }).join('');
+}
+
+document.getElementById('prev').addEventListener('click', () => {
+  if (idx > 0) { idx--; render(); }
+});
+document.getElementById('next').addEventListener('click', () => {
+  if (idx < steps.length - 1) { idx++; render(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' && idx < steps.length - 1) { idx++; render(); }
+  if (e.key === 'ArrowLeft'  && idx > 0)                { idx--; render(); }
+});
+
+render();
+</script>
+
+</body>
+</html>
