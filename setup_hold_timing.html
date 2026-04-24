@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup/Hold Timing — Parameters & Circuits</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #fff; color: #1a1a1a; padding: 2rem; max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+  .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
+  .btn { padding: 6px 16px; border: 0.5px solid #ccc; border-radius: 8px; background: transparent; color: #1a1a1a; cursor: pointer; font-size: 14px; }
+  .btn:hover { background: #f5f5f5; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .step-label { font-size: 13px; color: #888; }
+  .phase-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-bottom: 8px; }
+  .phase-param { background: #F0EEF8; color: #4A3A8A; }
+  .phase-setup { background: #E6F1FB; color: #185FA5; }
+  .phase-path  { background: #EAF3DE; color: #3B6D11; }
+  .phase-fail  { background: #FBE6E6; color: #8A1010; }
+  .step-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .step-desc { font-size: 13px; color: #555; margin-bottom: 1rem; line-height: 1.65; }
+  .diagram { border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 14px; margin-bottom: 1rem; background: #fff; }
+  .section-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .formula { font-family: monospace; font-size: 12px; background: #fafafa; border: 0.5px solid #e0e0e0; border-radius: 6px; padding: 10px 14px; margin-bottom: 1rem; line-height: 1.8; white-space: pre; overflow-x: auto; }
+  .legend { display: flex; gap: 14px; margin-top: 8px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #555; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<h1>Setup &amp; Hold Timing — Parameters and Circuits</h1>
+<div class="subtitle">Tpcq, Tpd, Tsu, Th, Tplh, Tphl and how they combine to form timing constraints</div>
+
+<div class="controls">
+  <button class="btn" id="prev" onclick="move(-1)">← Prev</button>
+  <button class="btn" id="next" onclick="move(1)">Next →</button>
+  <span class="step-label" id="counter">Step 1 / 11</span>
+</div>
+
+<div id="phase-badge" class="phase-badge phase-param">Parameter definitions</div>
+<div class="step-title" id="step-title"></div>
+<div class="step-desc" id="step-desc"></div>
+
+<div class="section-label">Circuit</div>
+<div class="diagram">
+  <svg id="circuit" viewBox="0 0 680 220" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"></svg>
+</div>
+
+<div class="section-label">Timing diagram</div>
+<div class="diagram">
+  <svg id="timing" viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"></svg>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#F0EEF8;border:0.5px solid #4A3A8A"></div>Flop internal delay</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#EAF3DE;border:0.5px solid #3B6D11"></div>Combinational path</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#FFF4C2;border:0.5px solid #A58A00"></div>Setup/hold window</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#FBE6E6;border:0.5px solid #8A1010"></div>Violation</div>
+  </div>
+</div>
+
+<div class="formula" id="formula"></div>
+
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, text) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+/**
+ * Flop rectangle at (x,y), size 70x70.
+ * Pins (returned for wiring):
+ *   D   -> left side, middle-upper: (x,        y+25)
+ *   Q   -> right side, middle-upper: (x+70,    y+25)
+ *   CLK -> left side, lower:         (x,       y+55)  (triangle tip is drawn inside)
+ */
+function drawFlop(svg, x, y, label) {
+  svg.appendChild(el('rect', {x, y, width: 70, height: 70, fill: '#fff', stroke: '#1a1a1a', 'stroke-width': 1, rx: 2}));
+  svg.appendChild(el('text', {x: x+35, y: y-5, 'text-anchor':'middle', 'font-size': 11, 'font-family':'system-ui'}, label));
+  // D pin label (near left edge, upper)
+  svg.appendChild(el('text', {x: x+6, y: y+29, 'font-size': 11, 'font-family':'monospace'}, 'D'));
+  // Q pin label (near right edge, upper)
+  svg.appendChild(el('text', {x: x+58, y: y+29, 'font-size': 11, 'font-family':'monospace'}, 'Q'));
+  // Clock triangle notch — drawn on the left edge, pointing INTO the flop
+  svg.appendChild(el('polyline', {points: `${x},${y+50} ${x+10},${y+55} ${x},${y+60}`, fill:'none', stroke:'#1a1a1a', 'stroke-width': 1}));
+  return {
+    d:   {x: x,      y: y+25},
+    q:   {x: x+70,   y: y+25},
+    clk: {x: x,      y: y+55}
+  };
+}
+
+function drawLine(svg, x1, y1, x2, y2, opts) {
+  const a = Object.assign({stroke:'#1a1a1a', 'stroke-width': 1}, opts || {});
+  a.x1 = x1; a.y1 = y1; a.x2 = x2; a.y2 = y2;
+  svg.appendChild(el('line', a));
+}
+
+// Draw a wire with optional orthogonal bends via waypoints [{x,y},...]
+function drawWirePath(svg, points) {
+  if (points.length < 2) return;
+  const pts = points.map(p => `${p.x},${p.y}`).join(' ');
+  svg.appendChild(el('polyline', {points: pts, fill:'none', stroke:'#1a1a1a', 'stroke-width': 1}));
+}
+
+function addLabel(svg, x, y, text, color, anchor) {
+  svg.appendChild(el('text', {
+    x, y, 'text-anchor': anchor || 'middle',
+    'font-size': 11, 'font-family':'monospace',
+    fill: color || '#444'
+  }, text));
+}
+
+function drawCombCloud(svg, cx, cy, label) {
+  // cx,cy = CENTER. returns {in: left-mid, out: right-mid}
+  svg.appendChild(el('ellipse', {cx, cy, rx: 42, ry: 22, fill:'#EAF3DE', stroke:'#3B6D11', 'stroke-width': 1}));
+  svg.appendChild(el('text', {cx, x:cx, y: cy+4, 'text-anchor':'middle', 'font-size': 11, 'font-family':'system-ui', fill:'#3B6D11'}, label || 'Comb logic'));
+  return {
+    in:  {x: cx-42, y: cy},
+    out: {x: cx+42, y: cy}
+  };
+}
+
+function drawClockSource(svg, cx, cy) {
+  svg.appendChild(el('circle', {cx, cy, r: 12, fill:'#fff', stroke:'#1a1a1a'}));
+  svg.appendChild(el('text', {x:cx, y: cy+4, 'text-anchor':'middle', 'font-size':11, 'font-family':'monospace'}, 'clk'));
+  return {out: {x: cx+12, y: cy}};
+}
+
+// ---- Timing helpers ----
+function drawClockWave(svg, x0, y, period, count, label) {
+  svg.appendChild(el('text', {x: x0-10, y: y+4, 'text-anchor':'end', 'font-size':11, 'font-family':'monospace', fill:'#444'}, label));
+  let pts = `${x0},${y+14}`;
+  for (let i=0; i<count; i++) {
+    const a = x0 + i*period;
+    const b = a + period/2;
+    const c = a + period;
+    pts += ` ${a},${y+14} ${a},${y-14} ${b},${y-14} ${b},${y+14} ${c},${y+14}`;
+  }
+  svg.appendChild(el('polyline', {points: pts, fill:'none', stroke:'#1a1a1a', 'stroke-width':1}));
+}
+
+function drawSignalTransition(svg, x0, y, transitions, label) {
+  svg.appendChild(el('text', {x: x0-10, y: y+4, 'text-anchor':'end', 'font-size':11, 'font-family':'monospace', fill:'#444'}, label));
+  let curY = y + (transitions[0].value ? -14 : 14);
+  let pts = `${x0},${curY}`;
+  for (let i=0; i<transitions.length; i++) {
+    const x = transitions[i].x;
+    const newY = y + (transitions[i].value ? -14 : 14);
+    if (newY !== curY) {
+      pts += ` ${x},${curY} ${x},${newY}`;
+      curY = newY;
+    }
+  }
+  pts += ` 650,${curY}`;
+  svg.appendChild(el('polyline', {points: pts, fill:'none', stroke:'#1a1a1a', 'stroke-width':1}));
+}
+
+function drawArrowSpan(svg, x1, x2, y, label, color) {
+  const c = color || '#4A3A8A';
+  svg.appendChild(el('line', {x1, y1: y, x2, y2: y, stroke: c, 'stroke-width': 1}));
+  svg.appendChild(el('polyline', {points:`${x1},${y-4} ${x1+5},${y} ${x1},${y+4}`, fill:c, stroke:c}));
+  svg.appendChild(el('polyline', {points:`${x2},${y-4} ${x2-5},${y} ${x2},${y+4}`, fill:c, stroke:c}));
+  svg.appendChild(el('text', {x: (x1+x2)/2, y: y-6, 'text-anchor':'middle', 'font-size':11, 'font-family':'monospace', fill:c}, label));
+}
+
+function drawWindow(svg, x1, x2, y1, y2, color, stroke) {
+  svg.appendChild(el('rect', {x: x1, y: y1, width: x2-x1, height: y2-y1, fill: color, stroke: stroke, 'stroke-width': 0.75, 'stroke-dasharray':'3,2', opacity: 0.6}));
+}
+
+// =============================================================
+// Re-usable circuit: single flop with clock source
+// Ports: shows D input stub and Q output stub
+// =============================================================
+function sceneSingleFlop(svg, label) {
+  const ff = drawFlop(svg, 280, 50, label || 'FF');
+  // D input stub
+  drawLine(svg, 180, ff.d.y, ff.d.x, ff.d.y);
+  addLabel(svg, 185, ff.d.y - 6, 'D', '#444', 'start');
+  // Q output stub
+  drawLine(svg, ff.q.x, ff.q.y, 460, ff.q.y);
+  addLabel(svg, 455, ff.q.y - 6, 'Q', '#444', 'end');
+  // Clock source below, wire up to the clk pin on the flop's left edge
+  const cs = drawClockSource(svg, 200, 160);
+  // From clock output (right side of circle) → horizontal → up to flop clk pin
+  drawWirePath(svg, [
+    {x: cs.out.x, y: cs.out.y},
+    {x: ff.clk.x - 20, y: cs.out.y},
+    {x: ff.clk.x - 20, y: ff.clk.y},
+    {x: ff.clk.x,      y: ff.clk.y}
+  ]);
+}
+
+// =============================================================
+// Re-usable circuit: FF1 → comb → FF2 with shared clock
+// =============================================================
+function sceneFlopCombFlop(svg, ff1Label, combLabel, ff2Label) {
+  const ff1 = drawFlop(svg, 90,  50, ff1Label || 'FF1');
+  const cc  = drawCombCloud(svg, 300, ff1.q.y, combLabel || 'Comb');
+  const ff2 = drawFlop(svg, 440, 50, ff2Label || 'FF2');
+
+  // FF1.Q -> comb.in
+  drawLine(svg, ff1.q.x, ff1.q.y, cc.in.x, cc.in.y);
+  addLabel(svg, (ff1.q.x + cc.in.x)/2, ff1.q.y - 6, 'Q1', '#444');
+  // comb.out -> FF2.D
+  drawLine(svg, cc.out.x, cc.out.y, ff2.d.x, ff2.d.y);
+  addLabel(svg, (cc.out.x + ff2.d.x)/2, ff2.d.y - 6, 'D2', '#444');
+
+  // Stubs for context
+  drawLine(svg, 30, ff1.d.y, ff1.d.x, ff1.d.y);
+  addLabel(svg, 35, ff1.d.y - 6, 'D1', '#444', 'start');
+  drawLine(svg, ff2.q.x, ff2.q.y, 620, ff2.q.y);
+  addLabel(svg, 615, ff2.q.y - 6, 'Q2', '#444', 'end');
+
+  // Clock source, routed through a horizontal clock bus below both flops
+  const cs = drawClockSource(svg, 40, 190);
+  const busY = 180;
+  // clock out -> right -> up into bus
+  drawWirePath(svg, [
+    {x: cs.out.x, y: cs.out.y},
+    {x: ff1.clk.x - 30, y: cs.out.y},
+    {x: ff1.clk.x - 30, y: busY}
+  ]);
+  // clock bus across the bottom
+  drawLine(svg, ff1.clk.x - 30, busY, ff2.clk.x - 20, busY);
+  // branch up to FF1 clk
+  drawWirePath(svg, [
+    {x: ff1.clk.x - 30, y: busY},
+    {x: ff1.clk.x - 30, y: ff1.clk.y},
+    {x: ff1.clk.x,      y: ff1.clk.y}
+  ]);
+  // junction dot at FF1 branch
+  svg.appendChild(el('circle', {cx: ff1.clk.x - 30, cy: busY, r: 2, fill:'#1a1a1a'}));
+  // branch up to FF2 clk
+  drawWirePath(svg, [
+    {x: ff2.clk.x - 20, y: busY},
+    {x: ff2.clk.x - 20, y: ff2.clk.y},
+    {x: ff2.clk.x,      y: ff2.clk.y}
+  ]);
+}
+
+const steps = [
+  {
+    phase: 'Parameter definitions',
+    badge: 'phase-param',
+    title: 'Tpcq — clock-to-Q propagation delay',
+    desc: 'After the clock rising edge, the flop\'s output Q takes time Tpcq to reflect the new value. This is the flop\'s internal delay from the triggering clock edge to a valid output. Also written as Tclk-q or Tcq.',
+    circuit: (svg) => sceneSingleFlop(svg, 'FF'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 40, 120, 4, 'clk');
+      drawSignalTransition(svg, 60, 100, [{x:60, value:1}], 'D');
+      drawSignalTransition(svg, 60, 160, [{x:60, value:0}, {x:200, value:1}], 'Q');
+      drawArrowSpan(svg, 180, 200, 200, 'Tpcq', '#4A3A8A');
+    },
+    formula: 'Tpcq = time from posedge clk → valid Q output\n\nTypical values: 50–300 ps in modern CMOS.\nVaries with process, voltage, temperature (PVT).\n\nVariants:\n  Tpcq = propagation (typical / worst-case)\n  Tccq = contamination (minimum, used for hold analysis)'
+  },
+  {
+    phase: 'Parameter definitions',
+    badge: 'phase-param',
+    title: 'Tpd — combinational propagation delay',
+    desc: 'Time for a signal to propagate through a block of combinational logic from input change to output change. Tpd is the max (worst-case) path delay; Tcd (contamination delay) is the min (fastest) path. Both matter — Tpd for setup, Tcd for hold.',
+    circuit: (svg) => sceneFlopCombFlop(svg, 'FF1', 'Comb', 'FF2'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 40, 120, 4, 'clk');
+      drawSignalTransition(svg, 60, 100, [{x:60, value:0}, {x:90, value:1}], 'Q1');
+      drawSignalTransition(svg, 60, 160, [{x:60, value:0}, {x:180, value:1}], 'D2');
+      drawArrowSpan(svg, 60, 90, 200, 'Tpcq', '#4A3A8A');
+      drawArrowSpan(svg, 90, 180, 220, 'Tpd', '#3B6D11');
+    },
+    formula: 'Tpd = worst-case combinational delay (input → output)\nTcd = contamination delay (fastest path through same logic)\n\nLibrary files (.lib) list Tpd per cell, per input-output pin pair.\nSTA sums Tpd along each path to compute arrival times.'
+  },
+  {
+    phase: 'Parameter definitions',
+    badge: 'phase-param',
+    title: 'Contamination delay — Tcd and Tccq',
+    desc: 'Contamination delay is the MINIMUM time from an input change to when the output STARTS changing (becomes "contaminated" — no longer stably holding the old value). It\'s the fastest any signal can propagate. Used for hold analysis, where we worry about new data arriving too soon and corrupting the capture.',
+    circuit: (svg) => {
+      // Flop with comb cloud, annotated to show contamination vs propagation
+      const ff1 = drawFlop(svg, 90, 50, 'FF1');
+      const cc  = drawCombCloud(svg, 300, ff1.q.y, 'Comb');
+      const ff2 = drawFlop(svg, 440, 50, 'FF2');
+      drawLine(svg, ff1.q.x, ff1.q.y, cc.in.x, cc.in.y);
+      drawLine(svg, cc.out.x, cc.out.y, ff2.d.x, ff2.d.y);
+      // clock bus
+      const cs = drawClockSource(svg, 40, 190);
+      const busY = 180;
+      drawWirePath(svg, [
+        {x: cs.out.x, y: cs.out.y},
+        {x: ff1.clk.x - 30, y: cs.out.y},
+        {x: ff1.clk.x - 30, y: busY}
+      ]);
+      drawLine(svg, ff1.clk.x - 30, busY, ff2.clk.x - 20, busY);
+      drawWirePath(svg, [
+        {x: ff1.clk.x - 30, y: busY},
+        {x: ff1.clk.x - 30, y: ff1.clk.y},
+        {x: ff1.clk.x,      y: ff1.clk.y}
+      ]);
+      svg.appendChild(el('circle', {cx: ff1.clk.x - 30, cy: busY, r: 2, fill:'#1a1a1a'}));
+      drawWirePath(svg, [
+        {x: ff2.clk.x - 20, y: busY},
+        {x: ff2.clk.x - 20, y: ff2.clk.y},
+        {x: ff2.clk.x,      y: ff2.clk.y}
+      ]);
+      // annotation
+      svg.appendChild(el('text', {x: 300, y: 120, 'text-anchor':'middle', 'font-size':10, 'font-family':'monospace', fill:'#3B6D11'}, 'Tcd (fast) ≤ Tpd (slow)'));
+    },
+    timing: (svg) => {
+      drawClockWave(svg, 60, 30, 120, 4, 'clk');
+      // Input change at one time
+      drawSignalTransition(svg, 60, 90, [{x:60, value:0}, {x:120, value:1}], 'in');
+      // Output: starts changing at Tcd, stable at Tpd
+      // Show as a "shaded" region between Tcd and Tpd
+      drawSignalTransition(svg, 60, 160, [{x:60, value:0}, {x:160, value:1}], 'out (fast path)');
+      drawSignalTransition(svg, 60, 220, [{x:60, value:0}, {x:230, value:1}], 'out (slow path)');
+      drawArrowSpan(svg, 120, 160, 135, 'Tcd', '#3B6D11');
+      drawArrowSpan(svg, 120, 230, 250, 'Tpd', '#3B6D11');
+      svg.appendChild(el('text', {x: 420, y: 135, 'text-anchor':'middle', 'font-size':9, 'font-family':'system-ui', fill:'#888'}, 'output first starts changing (contamination)'));
+      svg.appendChild(el('text', {x: 420, y: 250, 'text-anchor':'middle', 'font-size':9, 'font-family':'system-ui', fill:'#888'}, 'output finally stable at new value (propagation)'));
+    },
+    formula: 'Contamination (min) vs propagation (max):\n\n  Tcd  = min time from input → output STARTS changing\n  Tpd  = max time from input → output is STABLE at new value\n\n  Tccq = min clock-to-Q (flop contamination)\n  Tpcq = max clock-to-Q (flop propagation)\n\nWhy two numbers per cell?\n  • Different input→output paths have different delays\n  • Fastest path defines contamination (Tcd)\n  • Slowest path defines propagation (Tpd)\n  • Tcd  ≤  Tpd  always\n\nWhich one does STA use?\n  • Setup (max-delay): Tpd, Tpcq  — worst-case slow\n  • Hold  (min-delay): Tcd, Tccq  — worst-case fast\n\nSame library cell, both values listed in the .lib file.'
+  },
+  {
+    phase: 'Parameter definitions',
+    badge: 'phase-param',
+    title: 'Tplh and Tphl — rise vs fall delays',
+    desc: 'Tplh is delay when the output transitions Low→High; Tphl is delay for High→Low. They differ because NMOS pull-down and PMOS pull-up transistors have different drive strengths. Tpd is defined as max(Tplh, Tphl) — the worst case.',
+    circuit: (svg) => {
+      // Simple inverter
+      drawLine(svg, 180, 110, 280, 110);
+      addLabel(svg, 200, 104, 'A', '#444', 'start');
+      svg.appendChild(el('polygon', {points:'280,80 280,140 340,110', fill:'#fff', stroke:'#1a1a1a'}));
+      svg.appendChild(el('circle', {cx: 346, cy: 110, r: 5, fill:'#fff', stroke:'#1a1a1a'}));
+      drawLine(svg, 351, 110, 460, 110);
+      addLabel(svg, 450, 104, 'Y', '#444', 'end');
+      addLabel(svg, 315, 165, 'inverter', '#666');
+    },
+    timing: (svg) => {
+      drawSignalTransition(svg, 60, 80, [{x:60, value:0}, {x:150, value:1}, {x:380, value:0}], 'A');
+      drawSignalTransition(svg, 60, 160, [{x:60, value:1}, {x:180, value:0}, {x:440, value:1}], 'Y');
+      drawArrowSpan(svg, 150, 180, 210, 'Tphl', '#4A3A8A');
+      drawArrowSpan(svg, 380, 440, 210, 'Tplh', '#4A3A8A');
+      svg.appendChild(el('text', {x:340, y:245, 'text-anchor':'middle', 'font-size':10, 'font-family':'system-ui', fill:'#888'}, 'Subscript = direction of the OUTPUT transition'));
+    },
+    formula: 'Tplh = delay for output Low → High\nTphl = delay for output High → Low\n\nTpd ≈ max(Tplh, Tphl)   (worst-case, what STA uses)\n\nNaming: the subscript refers to the OUTPUT direction,\nnot the input. Some tools use the input direction instead —\nalways check the library convention.'
+  },
+  {
+    phase: 'Parameter definitions',
+    badge: 'phase-param',
+    title: 'Tsu — setup time',
+    desc: 'D input must be stable for at least Tsu BEFORE the clock rising edge. If D changes inside the setup window, the flop may capture wrong data or go metastable. Setup is a property of the destination flop itself, not the path leading to it.',
+    circuit: (svg) => sceneSingleFlop(svg, 'FF'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 60, 120, 4, 'clk');
+      drawSignalTransition(svg, 60, 140, [{x:60, value:0}, {x:120, value:1}], 'D');
+      drawWindow(svg, 140, 180, 120, 160, '#FFF4C2', '#A58A00');
+      drawArrowSpan(svg, 140, 180, 200, 'Tsu', '#A58A00');
+      svg.appendChild(el('text', {x: 340, y: 225, 'text-anchor':'middle', 'font-size':10, 'font-family':'system-ui', fill:'#8A4A10'}, 'D must be stable throughout this window before the edge'));
+    },
+    formula: 'Tsu = required stable time on D BEFORE posedge clk\n\nTypical: 20–100 ps in modern CMOS.\nListed in the standard cell library (.lib) per flop cell.\n\nViolation → flop may latch wrong value or go metastable.'
+  },
+  {
+    phase: 'Parameter definitions',
+    badge: 'phase-param',
+    title: 'Th — hold time',
+    desc: 'D input must remain stable for at least Th AFTER the clock rising edge. If D changes too soon after the edge, the new value may race through the flop and corrupt the captured data. Like setup, hold is a flop property.',
+    circuit: (svg) => sceneSingleFlop(svg, 'FF'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 60, 120, 4, 'clk');
+      drawSignalTransition(svg, 60, 140, [{x:60, value:1}, {x:230, value:0}], 'D');
+      drawWindow(svg, 180, 220, 120, 160, '#FFF4C2', '#A58A00');
+      drawArrowSpan(svg, 180, 220, 200, 'Th', '#A58A00');
+      svg.appendChild(el('text', {x: 370, y: 225, 'text-anchor':'middle', 'font-size':10, 'font-family':'system-ui', fill:'#8A4A10'}, 'D must NOT change until Th after the edge'));
+    },
+    formula: 'Th = required stable time on D AFTER posedge clk\n\nTypical: 0–50 ps (often 0 or slightly negative).\nNegative hold means D can change slightly before the edge safely —\nthe flop samples earlier internally.\n\nViolation → race condition; new data corrupts current capture.'
+  },
+  {
+    phase: 'Setup/hold window',
+    badge: 'phase-setup',
+    title: 'The combined setup/hold window',
+    desc: 'Setup and hold together define the "forbidden zone" around each clock edge where D must not transition. This window is Tsu + Th wide, straddling the clock edge. Any D transition inside this window risks metastability.',
+    circuit: (svg) => sceneSingleFlop(svg, 'FF'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 60, 120, 4, 'clk');
+      drawSignalTransition(svg, 60, 140, [{x:60, value:0}, {x:110, value:1}, {x:260, value:0}], 'D');
+      drawWindow(svg, 140, 220, 120, 160, '#FFF4C2', '#A58A00');
+      drawArrowSpan(svg, 140, 180, 195, 'Tsu', '#A58A00');
+      drawArrowSpan(svg, 180, 220, 220, 'Th', '#A58A00');
+      svg.appendChild(el('text', {x: 340, y: 245, 'text-anchor':'middle', 'font-size':10, 'font-family':'system-ui', fill:'#8A4A10'}, 'Forbidden zone = Tsu + Th, centered on the clock edge'));
+    },
+    formula: 'Forbidden window width = Tsu + Th\nStraddles the triggering clock edge.\n\nIf D transitions within this window → metastability risk.\nStatic timing analysis (STA) proves this can never happen\nfor every flop in the design, at every PVT corner.'
+  },
+  {
+    phase: 'Flop-to-flop path',
+    badge: 'phase-path',
+    title: 'The canonical flop→comb→flop path',
+    desc: 'Most timing paths in a synchronous design look like this: launch flop (FF1) → combinational logic → capture flop (FF2), both clocked by the same clock. Setup and hold are checked on the capture flop FF2.',
+    circuit: (svg) => sceneFlopCombFlop(svg, 'FF1 launch', 'Comb', 'FF2 capture'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 40, 180, 3, 'clk');
+      drawSignalTransition(svg, 60, 100, [{x:60, value:0}, {x:90, value:1}], 'Q1');
+      drawSignalTransition(svg, 60, 160, [{x:60, value:0}, {x:170, value:1}], 'D2');
+      drawArrowSpan(svg, 60, 90, 200, 'Tpcq', '#4A3A8A');
+      drawArrowSpan(svg, 90, 170, 220, 'Tpd', '#3B6D11');
+      drawWindow(svg, 220, 250, 140, 180, '#FFF4C2', '#A58A00');
+      svg.appendChild(el('text', {x:235, y:240, 'text-anchor':'middle', 'font-size':10, 'font-family':'monospace', fill:'#8A4A10'}, 'Tsu window'));
+    },
+    formula: 'Data launches from FF1 at posedge N:\n    Q1 valid at:  N·Tclk + Tpcq\n    D2 valid at:  N·Tclk + Tpcq + Tpd\n\nFF2 captures at posedge N+1:\n    Must be stable Tsu before:  (N+1)·Tclk − Tsu'
+  },
+  {
+    phase: 'Setup/hold window',
+    badge: 'phase-setup',
+    title: 'Setup constraint — the max-delay check',
+    desc: 'Data launched from FF1 must arrive at FF2\'s D pin and be stable Tsu before the NEXT clock edge. This bounds the maximum combinational delay — if logic is too slow, data misses the capture window and setup fails.',
+    circuit: (svg) => sceneFlopCombFlop(svg, 'FF1', 'Comb (Tpd)', 'FF2'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 40, 180, 3, 'clk');
+      drawSignalTransition(svg, 60, 100, [{x:60, value:0}, {x:90, value:1}], 'Q1');
+      drawSignalTransition(svg, 60, 160, [{x:60, value:0}, {x:180, value:1}], 'D2');
+      drawArrowSpan(svg, 60, 240, 220, 'Tclk', '#1a1a1a');
+      drawArrowSpan(svg, 60, 90, 195, 'Tpcq', '#4A3A8A');
+      drawArrowSpan(svg, 90, 180, 210, 'Tpd', '#3B6D11');
+      drawWindow(svg, 210, 240, 140, 180, '#FFF4C2', '#A58A00');
+      drawArrowSpan(svg, 210, 240, 200, 'Tsu', '#A58A00');
+    },
+    formula: 'SETUP CONSTRAINT (max-delay check):\n\n    Tpcq + Tpd + Tsu  ≤  Tclk\n\n⇒  Tpd  ≤  Tclk − Tpcq − Tsu\n\n"Data must arrive Tsu before the next edge."\n\nFailing this = setup violation = design too slow at this Tclk.\nFix: slow the clock, pipeline, simplify logic, use faster cells.'
+  },
+  {
+    phase: 'Setup/hold window',
+    badge: 'phase-path',
+    title: 'Hold constraint — the min-delay check',
+    desc: 'Data launched from FF1 must NOT arrive at FF2 too soon — FF2 needs the OLD data stable for Th after the CURRENT edge. This bounds the minimum combinational delay. Hold failures cannot be fixed by slowing the clock.',
+    circuit: (svg) => sceneFlopCombFlop(svg, 'FF1', 'Comb (Tcd)', 'FF2'),
+    timing: (svg) => {
+      drawClockWave(svg, 60, 40, 180, 3, 'clk');
+      drawSignalTransition(svg, 60, 100, [{x:60, value:1}, {x:80, value:0}], 'Q1');
+      drawSignalTransition(svg, 60, 160, [{x:60, value:1}, {x:110, value:0}], 'D2');
+      drawArrowSpan(svg, 60, 80, 200, 'Tccq', '#4A3A8A');
+      drawArrowSpan(svg, 80, 110, 220, 'Tcd', '#3B6D11');
+      drawWindow(svg, 60, 120, 140, 180, '#FFF4C2', '#A58A00');
+      drawArrowSpan(svg, 60, 120, 200, 'Th', '#A58A00');
+    },
+    formula: 'HOLD CONSTRAINT (min-delay check):\n\n    Tccq + Tcd  ≥  Th\n\n⇒  Tcd  ≥  Th − Tccq\n\nTccq = contamination clock-to-Q (fastest flop delay)\nTcd  = contamination combinational delay (fastest path)\n\n"New data must NOT arrive before Th after the current edge."\nFix: ADD delay (buffers) on the fast path.\nClock frequency does NOT affect hold violations.'
+  },
+  {
+    phase: 'Setup/hold window',
+    badge: 'phase-fail',
+    title: 'Setup vs hold — violation summary',
+    desc: 'Setup is about being too slow — fixed by slowing the clock or speeding up logic. Hold is about being too fast — fixed by adding buffer delay. Both must pass across all PVT corners for the design to be timing-clean.',
+    circuit: (svg) => {
+      sceneFlopCombFlop(svg, 'FF1', 'Comb', 'FF2');
+      svg.appendChild(el('text', {x: 510, y: 30, 'font-size':11, 'font-family':'monospace', fill:'#8A1010'}, 'SETUP: Tpd too big'));
+      svg.appendChild(el('text', {x: 510, y: 210, 'font-size':11, 'font-family':'monospace', fill:'#8A1010'}, 'HOLD:  Tcd too small'));
+    },
+    timing: (svg) => {
+      drawClockWave(svg, 60, 40, 180, 3, 'clk');
+      drawSignalTransition(svg, 60, 100, [{x:60, value:0}, {x:90, value:1}], 'Q1');
+      drawSignalTransition(svg, 60, 160, [{x:60, value:0}, {x:255, value:1}], 'D2');
+      drawWindow(svg, 210, 240, 140, 180, '#FBE6E6', '#8A1010');
+      svg.appendChild(el('text', {x:225, y:215, 'text-anchor':'middle', 'font-size':10, 'font-family':'monospace', fill:'#8A1010'}, 'SETUP VIOLATION'));
+      svg.appendChild(el('text', {x:225, y:230, 'text-anchor':'middle', 'font-size':9, 'font-family':'system-ui', fill:'#8A1010'}, 'D arrives inside Tsu window'));
+    },
+    formula: 'SUMMARY:\n\n  Setup:  Tpcq + Tpd + Tsu ≤ Tclk     (max-delay)\n  Hold:   Tccq + Tcd       ≥ Th       (min-delay)\n\nFix setup:  lower clock freq, pipeline, upsize cells, low-Vt\nFix hold:   add buffers on fast paths (clock-freq independent)\n\nSlack = required − arrival\n  Positive slack = timing met\n  Negative slack = violation'
+  }
+];
+
+function render() {
+  const s = steps[cur];
+  document.getElementById('counter').textContent = 'Step ' + (cur+1) + ' / ' + steps.length;
+  document.getElementById('prev').disabled = cur === 0;
+  document.getElementById('next').disabled = cur === steps.length-1;
+
+  const badge = document.getElementById('phase-badge');
+  badge.className = 'phase-badge ' + s.badge;
+  badge.textContent = s.phase;
+
+  document.getElementById('step-title').textContent = s.title;
+  document.getElementById('step-desc').textContent = s.desc;
+
+  const circuit = document.getElementById('circuit');
+  circuit.innerHTML = '';
+  s.circuit(circuit);
+
+  const timing = document.getElementById('timing');
+  timing.innerHTML = '';
+  s.timing(timing);
+
+  document.getElementById('formula').textContent = s.formula;
+}
+
+let cur = 0;
+function move(d) { cur = Math.max(0, Math.min(steps.length-1, cur+d)); render(); }
+
+render();
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') move(1);
+  if (e.key === 'ArrowLeft')  move(-1);
+});
+</script>
+</body>
+</html>
