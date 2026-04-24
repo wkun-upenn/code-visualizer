@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UVM Phases — Step-by-Step Visualizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #fff; color: #1a1a1a; padding: 2rem; max-width: 600px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+  .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
+  .btn { padding: 6px 16px; border: 0.5px solid #ccc; border-radius: 8px; background: transparent; color: #1a1a1a; cursor: pointer; font-size: 14px; }
+  .btn:hover { background: #f5f5f5; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .step-label { font-size: 13px; color: #888; }
+  .phase-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-bottom: 8px; }
+  .phase-build { background: #F0EEF8; color: #4A3A8A; }
+  .phase-run   { background: #E6F1FB; color: #185FA5; }
+  .phase-clean { background: #EAF3DE; color: #3B6D11; }
+  .phase-report{ background: #FBEFE0; color: #8A4A10; }
+  .step-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .step-desc { font-size: 13px; color: #666; margin-bottom: 1rem; line-height: 1.6; }
+  .code-block { background: #fafafa; border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; margin-bottom: 1.25rem; }
+  .code-line { font-family: monospace; font-size: 12px; line-height: 1.8; color: #bbb; display: block; padding: 0 2px; border-radius: 3px; white-space: pre; }
+  .code-line.active { color: #1a1a1a; background: #f0f0f0; }
+  .diagram { border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 1rem; background: #fff; }
+  .legend { display: flex; gap: 16px; margin-top: 0.75rem; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #555; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>UVM Simulation Phases</h1>
+<div class="subtitle">What executes in each phase and in what order</div>
+
+<div class="controls">
+  <button class="btn" id="prev" onclick="move(-1)">← Prev</button>
+  <button class="btn" id="next" onclick="move(1)">Next →</button>
+  <span class="step-label" id="counter">Step 1 / 12</span>
+</div>
+
+<div id="phase-badge" class="phase-badge phase-build">Build phases</div>
+<div class="step-title" id="step-title"></div>
+<div class="step-desc" id="step-desc"></div>
+
+<div class="diagram">
+  <svg id="svg" viewBox="0 0 560 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;"></svg>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#F0EEF8;border:0.5px solid #4A3A8A"></div>Build (function, top-down)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#E6F1FB;border:0.5px solid #185FA5"></div>Run (task, time-consuming)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#EAF3DE;border:0.5px solid #3B6D11"></div>Cleanup (function, bottom-up)</div>
+  </div>
+</div>
+
+<div class="code-block" id="code-block"></div>
+
+<script>
+const steps = [
+  {
+    phase: 'build',
+    badge: 'phase-build',
+    title: 'build_phase — construct the hierarchy',
+    desc: 'Top-down function phase. Each component creates its children using the factory and retrieves config from uvm_config_db. Executes from test → env → agent → driver/monitor/sequencer. No simulation time passes.',
+    active: 'build',
+    code: [
+      'function void build_phase(uvm_phase phase);',
+      '  super.build_phase(phase);',
+      '  m_cfg = my_cfg::type_id::create("m_cfg");',
+      '  env  = my_env::type_id::create("env", this);',
+      '  uvm_config_db#(my_cfg)::set(this, "env", "cfg", m_cfg);',
+      'endfunction'
+    ],
+    activeLine: 3
+  },
+  {
+    phase: 'build',
+    badge: 'phase-build',
+    title: 'connect_phase — wire TLM ports',
+    desc: 'Bottom-up function phase. After the entire hierarchy exists, components connect analysis ports, exports, and imps. Monitor → scoreboard, sequencer → driver, predictor → scoreboard, etc.',
+    active: 'connect',
+    code: [
+      'function void connect_phase(uvm_phase phase);',
+      '  super.connect_phase(phase);',
+      '  agent.monitor.ap.connect(sb.act_export);',
+      '  agent.driver.seq_item_port.connect(',
+      '    agent.sequencer.seq_item_export);',
+      'endfunction'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'build',
+    badge: 'phase-build',
+    title: 'end_of_elaboration_phase',
+    desc: 'Bottom-up function phase. Final chance to inspect the assembled testbench: print topology, register callbacks, do last-minute adjustments before simulation time starts. Still zero simulation time.',
+    active: 'eoe',
+    code: [
+      'function void end_of_elaboration_phase(uvm_phase phase);',
+      '  super.end_of_elaboration_phase(phase);',
+      '  uvm_top.print_topology();',
+      '  // register callbacks here',
+      'endfunction'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'build',
+    badge: 'phase-build',
+    title: 'start_of_simulation_phase',
+    desc: 'Bottom-up function phase. Last pre-run hook. Typically used to print banners, dump final config, or flip DUT-init-style signals that must settle before run_phase starts. Still no simulation time.',
+    active: 'sos',
+    code: [
+      'function void start_of_simulation_phase(uvm_phase phase);',
+      '  super.start_of_simulation_phase(phase);',
+      '  `uvm_info("TEST", "Starting simulation", UVM_LOW)',
+      'endfunction'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'run',
+    badge: 'phase-run',
+    title: 'run_phase — the main simulation',
+    desc: 'Task phase. Runs in parallel across all components and consumes simulation time. Tests raise objections, start sequences, drive stimulus. Simulation ends only when all objections are dropped.',
+    active: 'run',
+    code: [
+      'task run_phase(uvm_phase phase);',
+      '  phase.raise_objection(this);',
+      '  my_seq seq = my_seq::type_id::create("seq");',
+      '  seq.start(env.agent.sequencer);',
+      '  phase.drop_objection(this);',
+      'endtask'
+    ],
+    activeLine: 3
+  },
+  {
+    phase: 'run',
+    badge: 'phase-run',
+    title: 'reset_phase (runtime sub-phase)',
+    desc: 'Runtime sub-phase that runs in parallel with run_phase. Used for applying reset stimulus. Part of the fine-grained 12 runtime phases (reset → configure → main → shutdown, each with pre/post).',
+    active: 'reset',
+    code: [
+      'task reset_phase(uvm_phase phase);',
+      '  phase.raise_objection(this);',
+      '  vif.rst_n <= 0;',
+      '  #100ns vif.rst_n <= 1;',
+      '  phase.drop_objection(this);',
+      'endtask'
+    ],
+    activeLine: 3
+  },
+  {
+    phase: 'run',
+    badge: 'phase-run',
+    title: 'configure_phase',
+    desc: 'Runtime sub-phase after reset. DUT registers are programmed, clock dividers set, interrupts enabled. Happens before main stimulus. Runs in parallel with run_phase on all components.',
+    active: 'configure',
+    code: [
+      'task configure_phase(uvm_phase phase);',
+      '  phase.raise_objection(this);',
+      '  program_registers_seq.start(sqr);',
+      '  phase.drop_objection(this);',
+      'endtask'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'run',
+    badge: 'phase-run',
+    title: 'main_phase',
+    desc: 'Runtime sub-phase where the primary test stimulus runs. Most test sequences live here. By convention, this is where functional traffic exercises the DUT after reset + configure have completed.',
+    active: 'main',
+    code: [
+      'task main_phase(uvm_phase phase);',
+      '  phase.raise_objection(this);',
+      '  traffic_seq.start(env.agent.sqr);',
+      '  phase.drop_objection(this);',
+      'endtask'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'run',
+    badge: 'phase-run',
+    title: 'shutdown_phase',
+    desc: 'Final runtime sub-phase. Drains in-flight transactions, waits for DUT idle, allows pipelines to empty. After all objections drop here, simulation time stops advancing and cleanup phases begin.',
+    active: 'shutdown',
+    code: [
+      'task shutdown_phase(uvm_phase phase);',
+      '  phase.raise_objection(this);',
+      '  wait_for_dut_idle();',
+      '  phase.drop_objection(this);',
+      'endtask'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'clean',
+    badge: 'phase-clean',
+    title: 'extract_phase — pull final state',
+    desc: 'Bottom-up function phase. Cleanup begins. Each component pulls final state from DUT and internal structures: read residual register values, drain queues, snapshot counters. No simulation time.',
+    active: 'extract',
+    code: [
+      'function void extract_phase(uvm_phase phase);',
+      '  super.extract_phase(phase);',
+      '  final_count = sb.received_count;',
+      'endfunction'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'clean',
+    badge: 'phase-clean',
+    title: 'check_phase — verify correctness',
+    desc: 'Bottom-up function phase. Scoreboards verify that expected queues are empty, no unmatched transactions remain, coverage goals met. Flags errors via `uvm_error if anything is off.',
+    active: 'check',
+    code: [
+      'function void check_phase(uvm_phase phase);',
+      '  super.check_phase(phase);',
+      '  if (exp_q.size() != 0)',
+      '    `uvm_error("SB", "expected queue not empty")',
+      'endfunction'
+    ],
+    activeLine: 2
+  },
+  {
+    phase: 'report',
+    badge: 'phase-report',
+    title: 'report_phase + final_phase',
+    desc: 'Bottom-up function phases. report_phase prints PASS/FAIL summary and statistics. final_phase is the very last hook — release handles, close files, emit coverage reports. Simulation exits after.',
+    active: 'report',
+    code: [
+      'function void report_phase(uvm_phase phase);',
+      '  super.report_phase(phase);',
+      '  `uvm_info("TEST", $sformatf("sent=%0d", count),',
+      '           UVM_LOW)',
+      'endfunction'
+    ],
+    activeLine: 1
+  }
+];
+
+// Phase node coordinates on the diagram
+const nodes = [
+  { id: 'build',     x: 30,  y: 40,  label: 'build',     group: 'build' },
+  { id: 'connect',   x: 30,  y: 75,  label: 'connect',   group: 'build' },
+  { id: 'eoe',       x: 30,  y: 110, label: 'end_of_elab', group: 'build' },
+  { id: 'sos',       x: 30,  y: 145, label: 'start_of_sim', group: 'build' },
+  { id: 'run',       x: 240, y: 40,  label: 'run_phase',  group: 'run' },
+  { id: 'reset',     x: 240, y: 75,  label: 'reset',      group: 'run' },
+  { id: 'configure', x: 240, y: 110, label: 'configure',  group: 'run' },
+  { id: 'main',      x: 240, y: 145, label: 'main',       group: 'run' },
+  { id: 'shutdown',  x: 240, y: 180, label: 'shutdown',   group: 'run' },
+  { id: 'extract',   x: 420, y: 40,  label: 'extract',    group: 'clean' },
+  { id: 'check',     x: 420, y: 75,  label: 'check',      group: 'clean' },
+  { id: 'report',    x: 420, y: 110, label: 'report',     group: 'report' }
+];
+
+const groupColors = {
+  build:  { fill: '#F0EEF8', stroke: '#4A3A8A' },
+  run:    { fill: '#E6F1FB', stroke: '#185FA5' },
+  clean:  { fill: '#EAF3DE', stroke: '#3B6D11' },
+  report: { fill: '#FBEFE0', stroke: '#8A4A10' }
+};
+
+function render() {
+  const s = steps[cur];
+
+  document.getElementById('counter').textContent = `Step ${cur+1} / ${steps.length}`;
+  document.getElementById('prev').disabled = cur === 0;
+  document.getElementById('next').disabled = cur === steps.length-1;
+
+  const badge = document.getElementById('phase-badge');
+  badge.className = 'phase-badge ' + s.badge;
+  const phaseNames = { build: 'Build phases (function, no time)', run: 'Run phases (task, simulation time)', clean: 'Cleanup phases (function, no time)', report: 'Report / final (function, no time)' };
+  badge.textContent = phaseNames[s.phase];
+
+  document.getElementById('step-title').textContent = s.title;
+  document.getElementById('step-desc').textContent = s.desc;
+
+  // code block
+  const cb = document.getElementById('code-block');
+  cb.innerHTML = '';
+  s.code.forEach((line, i) => {
+    const el = document.createElement('span');
+    el.className = 'code-line' + (i === s.activeLine ? ' active' : '');
+    el.textContent = line;
+    cb.appendChild(el);
+  });
+
+  // svg
+  const svg = document.getElementById('svg');
+  svg.innerHTML = '';
+
+  // group headers
+  const headers = [
+    { x: 75,  y: 25, text: '1. Build (top-down)', color: '#4A3A8A' },
+    { x: 285, y: 25, text: '2. Run (parallel)',    color: '#185FA5' },
+    { x: 465, y: 25, text: '3. Cleanup',           color: '#3B6D11' }
+  ];
+  headers.forEach(h => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('x', h.x); t.setAttribute('y', h.y);
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('font-size', '11');
+    t.setAttribute('font-family', 'system-ui, sans-serif');
+    t.setAttribute('fill', h.color);
+    t.setAttribute('font-weight', '500');
+    t.textContent = h.text;
+    svg.appendChild(t);
+  });
+
+  // arrows between groups
+  [[150, 115, 235, 115], [340, 115, 415, 115]].forEach(([x1,y1,x2,y2]) => {
+    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+    l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+    l.setAttribute('stroke','#bbb'); l.setAttribute('stroke-width','1');
+    l.setAttribute('marker-end','url(#arrow)');
+    svg.appendChild(l);
+  });
+
+  // arrow marker def
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  defs.innerHTML = '<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#bbb"/></marker>';
+  svg.appendChild(defs);
+
+  // nodes
+  nodes.forEach(n => {
+    const isActive = n.id === s.active;
+    const c = groupColors[n.group];
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', n.x); rect.setAttribute('y', n.y);
+    rect.setAttribute('width', 120); rect.setAttribute('height', 24);
+    rect.setAttribute('rx', 4);
+    rect.setAttribute('fill', isActive ? c.fill : '#fff');
+    rect.setAttribute('stroke', isActive ? c.stroke : '#d0d0d0');
+    rect.setAttribute('stroke-width', isActive ? '1.5' : '0.75');
+    svg.appendChild(rect);
+
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x', n.x + 60); t.setAttribute('y', n.y + 16);
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('font-size', '11');
+    t.setAttribute('font-family', 'system-ui, sans-serif');
+    t.setAttribute('fill', isActive ? c.stroke : '#666');
+    t.setAttribute('font-weight', isActive ? '500' : '400');
+    t.textContent = n.label;
+    svg.appendChild(t);
+  });
+
+  // objection indicator during run phases
+  if (s.phase === 'run') {
+    const note = document.createElementNS('http://www.w3.org/2000/svg','text');
+    note.setAttribute('x', 300); note.setAttribute('y', 225);
+    note.setAttribute('text-anchor','middle');
+    note.setAttribute('font-size','10');
+    note.setAttribute('fill','#888');
+    note.setAttribute('font-family','system-ui, sans-serif');
+    note.textContent = 'raise_objection() / drop_objection() controls when run_phase ends';
+    svg.appendChild(note);
+  }
+}
+
+let cur = 0;
+function move(d) { cur = Math.max(0, Math.min(steps.length-1, cur+d)); render(); }
+
+render();
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') move(1);
+  if (e.key === 'ArrowLeft')  move(-1);
+});
+</script>
+</body>
+</html>
