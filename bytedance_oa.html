@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Four Problems — Visualizers</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #fff; color: #1a1a1a; padding: 2rem; max-width: 600px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 0.75rem; }
+  .problem-desc { font-size: 13px; color: #444; line-height: 1.65; margin-bottom: 1.5rem; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 1.5rem; }
+  .btn { padding: 6px 16px; border: 0.5px solid #ccc; border-radius: 8px; background: transparent; color: #1a1a1a; cursor: pointer; font-size: 14px; }
+  .btn:hover { background: #f5f5f5; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .btn.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .step-label { font-size: 13px; color: #888; }
+  .phase-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-bottom: 8px; }
+  .phase-push { background: #E6F1FB; color: #185FA5; }
+  .phase-pop  { background: #FAECE7; color: #993C1D; }
+  .phase-done { background: #EAF3DE; color: #3B6D11; }
+  .step-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+  .step-desc { font-size: 13px; color: #666; margin-bottom: 1rem; line-height: 1.6; }
+  .array-row { display: flex; gap: 6px; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
+  .arr-cell { min-width: 36px; height: 36px; padding: 0 6px; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 0.5px solid #ccc; font-size: 14px; font-weight: 500; background: #f5f5f5; }
+  .arr-cell.active { background: #B5D4F4; color: #0C447C; border-color: #378ADD; }
+  .arr-cell.no { background: #F5C4B3; color: #712B13; border-color: #D85A30; }
+  .arr-cell.yes { background: #C0DD97; color: #27500A; border-color: #639922; }
+  .arr-cell.blank { background: #fafafa; color: #ccc; border-color: #eee; }
+  .arr-label { font-size: 12px; color: #aaa; white-space: nowrap; }
+  svg { display: block; max-width: 560px; width: 100%; }
+</style>
+</head>
+<body>
+<h1 id="title"></h1>
+<p class="subtitle" id="subtitle"></p>
+<p class="problem-desc" id="problemDesc"></p>
+
+<div class="tabs" id="tabs"></div>
+
+<div class="controls">
+  <button class="btn" id="prevBtn" onclick="move(-1)">← prev</button>
+  <button class="btn" id="nextBtn" onclick="move(1)">next →</button>
+  <span class="step-label" id="stepCounter"></span>
+</div>
+<div class="phase-badge" id="phaseBadge"></div>
+<div class="step-title" id="stepTitle"></div>
+<div class="step-desc" id="stepDesc"></div>
+<div class="array-row" id="arrayRow"></div>
+<svg id="stepSvg" viewBox="0 0 560 190"></svg>
+
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+function E(tag, a, txt){ const e=document.createElementNS(NS,tag); for(const k in a) e.setAttribute(k,a[k]); if(txt!=null) e.textContent=txt; return e; }
+function cell(t, cls){ const d=document.createElement('div'); d.className='arr-cell'+(cls?' '+cls:''); d.textContent=t; return d; }
+function lbl(t){ const s=document.createElement('span'); s.className='arr-label'; s.textContent=t; return s; }
+
+/* ---------------- Q: Matrix Border Sort ---------------- */
+const mOrig  = [[8,3,5,1],[9,10,6,2],[4,11,7,12],[13,15,14,16]];
+const mOuter = [[1,2,3,4],[16,10,6,5],[15,11,7,8],[14,13,12,9]];
+const mFinal = [[1,2,3,4],[16,6,7,5],[15,11,10,8],[14,13,12,9]];
+const ringOut = [[0,0],[0,1],[0,2],[0,3],[1,3],[2,3],[3,3],[3,2],[3,1],[3,0],[2,0],[1,0]];
+const ringIn  = [[1,1],[1,2],[2,2],[2,1]];
+const qm = {
+  name: 'Matrix Borders',
+  title: 'Sort Each Matrix Border',
+  subtitle: '4×4 matrix · sort every concentric border, place back clockwise from the top-left',
+  desc: 'A matrix\u2019s border is its outer ring (top and bottom rows plus left and right columns). Remove it and the next ring is the following border, and so on toward the centre. For each border, sort its elements and write them back clockwise starting from that border\u2019s top-left corner.',
+  steps: [
+    { phase:'push', badge:'border 0', title:'Border 0 — the outer ring',
+      desc:'Read the outer ring clockwise from the top-left corner, then sort ascending.',
+      matrix:mOrig, ring:ringOut, cls:'active', seqLabel:'clockwise:', seq:[8,3,5,1,2,12,16,14,15,13,4,9] },
+    { phase:'pop', badge:'sorted', title:'Sorted outer ring placed back',
+      desc:'Sorted to 1,2,…,16 and written back clockwise from the top-left.',
+      matrix:mOuter, ring:ringOut, cls:'yes', seqLabel:'sorted:', seq:[1,2,3,4,5,8,9,12,13,14,15,16] },
+    { phase:'push', badge:'border 1', title:'Border 1 — the inner ring',
+      desc:'The 2×2 centre is the next border. Clockwise reading: 10,6,7,11.',
+      matrix:mOuter, ring:ringIn, cls:'active', seqLabel:'clockwise:', seq:[10,6,7,11] },
+    { phase:'pop', badge:'sorted', title:'Sorted inner ring placed back',
+      desc:'Sorted to 6,7,10,11 and written back clockwise.',
+      matrix:mFinal, ring:ringIn, cls:'yes', seqLabel:'sorted:', seq:[6,7,10,11] },
+    { phase:'done', badge:'done', title:'Done',
+      desc:'Each concentric border is independently sorted and laid back clockwise.',
+      matrix:mFinal, ring:[], cls:'', seq:[] }
+  ],
+  drawArray(s, row){
+    if(!s.seq.length){ row.appendChild(lbl('done')); return; }
+    row.appendChild(lbl(s.seqLabel));
+    s.seq.forEach(v => row.appendChild(cell(v, s.cls==='yes'?'yes':'active')));
+  },
+  drawSvg(s, svg){
+    svg.setAttribute('viewBox','0 0 560 224');
+    const cs=52, gx0=176, gy0=8;
+    const inRing = (r,c)=> s.ring.some(p=>p[0]===r&&p[1]===c);
+    for(let r=0;r<4;r++)for(let c=0;c<4;c++){
+      const hit=inRing(r,c);
+      const fill = hit ? (s.cls==='yes'?'#C0DD97':'#B5D4F4') : '#f5f5f5';
+      const stroke = hit ? (s.cls==='yes'?'#639922':'#378ADD') : '#ddd';
+      const tcol = hit ? (s.cls==='yes'?'#27500A':'#0C447C') : '#1a1a1a';
+      svg.appendChild(E('rect',{x:gx0+c*cs,y:gy0+r*cs,width:cs-5,height:cs-5,rx:8,fill,stroke,'stroke-width':hit?1.5:0.5}));
+      svg.appendChild(E('text',{x:gx0+c*cs+(cs-5)/2,y:gy0+r*cs+(cs-5)/2+5,'text-anchor':'middle','font-size':14,'font-weight':500,fill:tcol,'font-family':'system-ui'}, s.matrix[r][c]));
+    }
+  }
+};
+
+/* ---------------- Q2: Adjacent Word Matching ---------------- */
+const words = ['aced','axed','data','dazed'];
+const q2 = {
+  name: 'Word Match',
+  title: 'Adjacent Word Matching',
+  subtitle: 'words = ["aced","axed","data","dazed"] → answer = [true, false, false]',
+  desc: 'Given an array words, return a Boolean array of length n \u2212 1. Element i is true when words[i] and words[i+1] begin with the same character and end with the same character.',
+  steps: [
+    { phase:'push', badge:'compare', title:'compare words[0] & words[1]',
+      desc:'aced vs axed — first a = a ✓, last d = d ✓ → true.', pair:[0,1], res:['T','',''] },
+    { phase:'push', badge:'compare', title:'compare words[1] & words[2]',
+      desc:'axed vs data — first a ≠ d → false.', pair:[1,2], res:['T','F',''] },
+    { phase:'push', badge:'compare', title:'compare words[2] & words[3]',
+      desc:'data vs dazed — first d = d ✓, last a ≠ d → false.', pair:[2,3], res:['T','F','F'] },
+    { phase:'done', badge:'done', title:'answer = [true, false, false]',
+      desc:'Each entry checks whether neighbours share both first and last character.', pair:null, res:['T','F','F'], done:true }
+  ],
+  drawArray(s, row){
+    row.appendChild(lbl('answer:'));
+    s.res.forEach(v => {
+      if(v==='') row.appendChild(cell('·','blank'));
+      else row.appendChild(cell(v==='T'?'true':'false', v==='T'?'yes':'no'));
+    });
+  },
+  drawSvg(s, svg){
+    svg.setAttribute('viewBox','0 0 560 110');
+    const xs=[20,160,300,440];
+    words.forEach((w,i)=>{
+      const hit = s.pair && s.pair.includes(i);
+      svg.appendChild(E('rect',{x:xs[i],y:30,width:110,height:50,rx:9,fill:hit?'#E6F1FB':'#fff',stroke:hit?'#378ADD':'#ccc','stroke-width':hit?1.5:0.5}));
+      const t=E('text',{x:xs[i]+55,y:62,'text-anchor':'middle','font-size':17,'font-weight':500,'font-family':'system-ui'});
+      t.appendChild(E('tspan',{fill:'#378ADD'}, w[0]));
+      t.appendChild(E('tspan',{fill:'#1a1a1a'}, w.slice(1,-1)));
+      t.appendChild(E('tspan',{fill:'#639922'}, w[w.length-1]));
+      svg.appendChild(t);
+      svg.appendChild(E('text',{x:xs[i]+55,y:98,'text-anchor':'middle','font-size':10,fill:'#aaa','font-family':'system-ui'},'i='+i));
+    });
+  }
+};
+
+/* ---------------- Q3: Smallest Parenthesized Sum ---------------- */
+const q3vals = [1484,753,588,371,296,962];
+const q3disp = ['(741+1)·2','(741+12)','7·(41+1)·2','7·(41+12)','74·(1+1)·2','74·(1+12)'];
+function q3step(i){
+  const m = Math.min(...q3vals.slice(0,i+1));
+  return { phase:'push', badge:'try placement', title:q3disp[i]+' = '+q3vals[i],
+    desc:'Digits outside the brackets multiply the bracketed sum. Value = '+q3vals[i]+'. Best so far = '+m+'.',
+    idx:i, min:m, expr:q3disp[i], val:q3vals[i] };
+}
+const q3 = {
+  name: 'Min Expr',
+  title: 'Smallest Parenthesized Sum',
+  subtitle: '"741+12" → try every bracket placement → smallest = 296',
+  desc: 'You\u2019re given a string "A+B", a sum of two positive integers whose decimal forms contain no zeros. Insert exactly one pair of parentheses so the + sits inside them, with at least one digit between the + and each bracket. Digits left outside the brackets multiply the bracketed sum, as do digits on the right. Return the smallest value obtainable.',
+  steps: [ q3step(0),q3step(1),q3step(2),q3step(3),q3step(4),q3step(5),
+    { phase:'done', badge:'done', title:'answer = 296', desc:'74·(1+1)·2 = 296 is the minimum over all 6 valid placements.', idx:4, min:296, expr:'74·(1+1)·2', val:296, done:true } ],
+  drawArray(s, row){
+    row.appendChild(lbl('values:'));
+    q3vals.forEach((v,i)=>{
+      let cls='blank';
+      if(s.done && v===296) cls='yes';
+      else if(i<=s.idx && !s.done) cls = (i===s.idx?'active':'');
+      else if(s.done) cls='';
+      row.appendChild(cell(v, cls));
+    });
+    row.appendChild(lbl('· min '+s.min));
+  },
+  drawSvg(s, svg){
+    svg.setAttribute('viewBox','0 0 560 110');
+    svg.appendChild(E('text',{x:280,y:50,'text-anchor':'middle','font-size':24,'font-weight':500,fill:s.done?'#27500A':'#1a1a1a','font-family':'system-ui'}, s.expr));
+    svg.appendChild(E('text',{x:280,y:84,'text-anchor':'middle','font-size':16,fill:s.done?'#639922':'#888','font-family':'system-ui'}, '= '+s.val));
+  }
+};
+
+/* ---------------- Q4: House Segments ---------------- */
+const xp = p => 30 + (p-1)*60;
+function q4step(badge, title, desc, present, count, res, phase){
+  return { phase, badge, title, desc, present, count, res };
+}
+const q4 = {
+  name: 'House Segments',
+  title: 'House Segments',
+  subtitle: 'houses = [1,2,3,6,7,9] · queries = [6,3,7,2,9,1] → [3,3,2,2,1,0]',
+  desc: 'Houses sit at distinct integer positions on a number line. Given queries \u2014 the order in which houses are destroyed \u2014 report after each destruction how many segments remain. A segment is a maximal run of houses on consecutive integers. Return one count per query.',
+  steps: [
+    q4step('start','initial state','Houses at 1,2,3,6,7,9 form 3 segments: {1,2,3}, {6,7}, {9}.',[1,2,3,6,7,9],3,['','','','','',''],'push'),
+    q4step('destroy','destroy 6','{6,7} breaks down to {7}. Still {1,2,3},{7},{9} → 3 segments.',[1,2,3,7,9],3,['3','','','','',''],'pop'),
+    q4step('destroy','destroy 3','{1,2,3} shrinks to {1,2}. {1,2},{7},{9} → 3 segments.',[1,2,7,9],3,['3','3','','','',''],'pop'),
+    q4step('destroy','destroy 7','{7} disappears. {1,2},{9} → 2 segments.',[1,2,9],2,['3','3','2','','',''],'pop'),
+    q4step('destroy','destroy 2','{1,2} shrinks to {1}. {1},{9} → 2 segments.',[1,9],2,['3','3','2','2','',''],'pop'),
+    q4step('destroy','destroy 9','{9} disappears. Just {1} → 1 segment.',[1],1,['3','3','2','2','1',''],'pop'),
+    q4step('destroy','destroy 1','Last house gone → 0 segments.',[],0,['3','3','2','2','1','0'],'pop'),
+    q4step('done','answer = [3,3,2,2,1,0]','Counted after each destruction. Removing an isolated end house leaves the count unchanged (steps 1→2 and 3→4).',[],0,['3','3','2','2','1','0'],'done')
+  ],
+  drawArray(s, row){
+    row.appendChild(lbl('segments:'));
+    s.res.forEach(v => row.appendChild(cell(v===''?'·':v, v===''?'blank':(s.phase==='done'?'yes':'active'))));
+  },
+  drawSvg(s, svg){
+    svg.setAttribute('viewBox','0 0 560 110');
+    svg.appendChild(E('text',{x:30,y:24,'font-size':12,fill:'#888','font-family':'system-ui'}, 'segments = '+s.count));
+    svg.appendChild(E('line',{x1:xp(1),y1:62,x2:xp(9),y2:62,stroke:'#eee','stroke-width':2}));
+    for(let p=1;p<=9;p++){
+      const present = s.present.includes(p);
+      if(present){
+        svg.appendChild(E('circle',{cx:xp(p),cy:62,r:11,fill:'#C0DD97',stroke:'#639922','stroke-width':1}));
+        svg.appendChild(E('text',{x:xp(p),y:66,'text-anchor':'middle','font-size':11,'font-weight':500,fill:'#27500A','font-family':'system-ui'}, p));
+      } else {
+        svg.appendChild(E('text',{x:xp(p),y:67,'text-anchor':'middle','font-size':15,fill:'#D85A30','font-family':'system-ui'}, '×'));
+      }
+      svg.appendChild(E('text',{x:xp(p),y:92,'text-anchor':'middle','font-size':10,fill:'#bbb','font-family':'system-ui'}, p));
+    }
+  }
+};
+
+/* ---------------- Controller ---------------- */
+const PROBLEMS = [q2, q3, qm, q4];
+let P = 0, cur = 0;
+
+function buildTabs(){
+  const t = document.getElementById('tabs');
+  t.innerHTML = '';
+  PROBLEMS.forEach((p,i)=>{
+    const b=document.createElement('button');
+    b.className='btn'+(i===P?' active':'');
+    b.textContent=(i+1)+'. '+p.name;
+    b.onclick=()=>{ P=i; cur=0; buildTabs(); render(); };
+    t.appendChild(b);
+  });
+}
+function move(d){ const st=PROBLEMS[P].steps; cur=Math.max(0,Math.min(st.length-1,cur+d)); render(); }
+function render(){
+  const prob=PROBLEMS[P], s=prob.steps[cur];
+  document.getElementById('title').textContent=prob.title;
+  document.getElementById('subtitle').textContent=prob.subtitle;
+  document.getElementById('problemDesc').textContent=prob.desc;
+  document.getElementById('stepTitle').textContent=s.title;
+  document.getElementById('stepDesc').textContent=s.desc;
+  document.getElementById('stepCounter').textContent='step '+(cur+1)+' of '+prob.steps.length;
+  document.getElementById('prevBtn').disabled=cur===0;
+  document.getElementById('nextBtn').disabled=cur===prob.steps.length-1;
+  const badge=document.getElementById('phaseBadge');
+  badge.className='phase-badge phase-'+s.phase;
+  badge.textContent=s.badge;
+  const row=document.getElementById('arrayRow'); row.innerHTML='';
+  prob.drawArray(s,row);
+  const svg=document.getElementById('stepSvg'); svg.innerHTML='';
+  prob.drawSvg(s,svg);
+}
+buildTabs();
+render();
+</script>
+</body>
+</html>
