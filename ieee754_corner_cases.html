@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IEEE 754 Corner Cases — Reference &amp; Verification</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #fff; color: #1a1a1a; padding: 2rem 1.5rem 5rem; max-width: 860px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 1.75rem; border-bottom: 0.5px solid #e0e0e0; }
+  .tab { padding: 8px 16px; border: none; background: transparent; color: #888; cursor: pointer; font-size: 14px; font-family: inherit; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab:hover { color: #1a1a1a; }
+  .tab.active { color: #1a1a1a; border-bottom-color: #1a1a1a; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  h2 { font-size: 15px; font-weight: 500; margin: 2rem 0 0.6rem; }
+  h2:first-child { margin-top: 0; }
+  h3 { font-size: 13px; font-weight: 500; color: #666; margin: 1.4rem 0 0.5rem; }
+  p { font-size: 13.5px; color: #444; margin-bottom: 0.9rem; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-bottom: 8px; }
+  .b-enc { background: #F0EEF8; color: #4A3A8A; }
+  .b-arith { background: #E6F1FB; color: #185FA5; }
+  .b-flag { background: #FBEFE0; color: #8A4A10; }
+  .b-test { background: #EAF3DE; color: #3B6D11; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 1.1rem; }
+  th, td { text-align: left; padding: 7px 10px 7px 0; border-bottom: 0.5px solid #eee; vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #999; font-weight: 500; border-bottom: 0.5px solid #ddd; }
+  td.m, th.m { font-family: monospace; }
+  .code-block { background: #fafafa; border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; margin-bottom: 1.1rem; overflow-x: auto; }
+  .code-line { font-family: monospace; font-size: 12px; line-height: 1.75; color: #1a1a1a; display: block; white-space: pre; }
+  .code-line.c { color: #999; }
+  .diagram { border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 14px; margin-bottom: 1.1rem; }
+  .note { font-size: 12.5px; color: #666; background: #fafafa; border-left: 2px solid #ddd; padding: 8px 12px; margin-bottom: 1.1rem; }
+  code { font-family: monospace; font-size: 12px; background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+  ul { margin: 0 0 1rem 1.1rem; font-size: 13.5px; color: #444; }
+  li { margin-bottom: 5px; }
+  .bf { font-family: monospace; font-size: 10px; fill: #1a1a1a; }
+  .bfl { font-size: 9px; fill: #999; }
+</style>
+</head>
+<body>
+
+<h1>IEEE 754 Corner Cases</h1>
+<div class="subtitle">Encoding, worked arithmetic, and what to test on a DUT · binary32 unless noted</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="show(0)">Corner cases</button>
+  <button class="tab" onclick="show(1)">Add &amp; multiply</button>
+  <button class="tab" onclick="show(2)">Verification</button>
+</div>
+
+<!-- ================= TAB 1 ================= -->
+<div class="panel active">
+
+<div class="badge b-enc">Encoding</div>
+<h2>Field layout</h2>
+<div class="diagram">
+<svg viewBox="0 0 820 78" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+  <rect x="20" y="24" width="24" height="34" rx="3" fill="#F0EEF8" stroke="#4A3A8A" stroke-width="0.5"/>
+  <rect x="44" y="24" width="195" height="34" rx="3" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+  <rect x="239" y="24" width="561" height="34" rx="3" fill="#FBEFE0" stroke="#8A4A10" stroke-width="0.5"/>
+  <text class="bf" x="32"  y="46" text-anchor="middle">S</text>
+  <text class="bf" x="141" y="46" text-anchor="middle">exponent (8)</text>
+  <text class="bf" x="519" y="46" text-anchor="middle">mantissa / fraction (23)</text>
+  <text class="bfl" x="32"  y="18" text-anchor="middle">31</text>
+  <text class="bfl" x="52"  y="18">30</text>
+  <text class="bfl" x="231" y="18" text-anchor="end">23</text>
+  <text class="bfl" x="247" y="18">22</text>
+  <text class="bfl" x="798" y="18" text-anchor="end">0</text>
+  <text class="bfl" x="20"  y="72">value = (-1)^S x 2^(E - 127) x 1.M     for normals</text>
+</svg>
+</div>
+
+<table>
+  <tr><th>Format</th><th>Sign</th><th>Exp</th><th>Mant</th><th>Bias</th><th>Precision</th></tr>
+  <tr><td>binary16</td><td>1</td><td>5</td><td>10</td><td>15</td><td>11 bits</td></tr>
+  <tr><td>binary32</td><td>1</td><td>8</td><td>23</td><td>127</td><td>24 bits</td></tr>
+  <tr><td>binary64</td><td>1</td><td>11</td><td>52</td><td>1023</td><td>53 bits</td></tr>
+</table>
+
+<h2>The five encoding classes</h2>
+<p>Everything hinges on whether the exponent field is all-zeros, all-ones, or in between. This is the table to reproduce from memory.</p>
+
+<table>
+  <tr><th>Class</th><th class="m">E field</th><th class="m">M field</th><th>Value</th><th class="m">Example (fp32)</th></tr>
+  <tr><td>Zero</td><td class="m">0x00</td><td class="m">0</td><td>±0 &mdash; sign is preserved</td><td class="m">0x00000000, 0x80000000</td></tr>
+  <tr><td>Subnormal</td><td class="m">0x00</td><td class="m">≠ 0</td><td>(-1)<sup>S</sup> × 2<sup>-126</sup> × 0.M &mdash; <b>no implicit 1</b></td><td class="m">0x00000001 = 2<sup>-149</sup></td></tr>
+  <tr><td>Normal</td><td class="m">0x01–0xFE</td><td class="m">any</td><td>(-1)<sup>S</sup> × 2<sup>E-127</sup> × 1.M</td><td class="m">0x3F800000 = 1.0</td></tr>
+  <tr><td>Infinity</td><td class="m">0xFF</td><td class="m">0</td><td>±∞</td><td class="m">0x7F800000, 0xFF800000</td></tr>
+  <tr><td>qNaN</td><td class="m">0xFF</td><td class="m">MSB = 1</td><td>quiet NaN, propagates silently</td><td class="m">0x7FC00000</td></tr>
+  <tr><td>sNaN</td><td class="m">0xFF</td><td class="m">MSB = 0, rest ≠ 0</td><td>signaling NaN, raises <b>invalid</b></td><td class="m">0x7F800001</td></tr>
+</table>
+
+<div class="note">
+The subnormal case is where most RTL bugs live. Exponent field <code>0x00</code> means the effective exponent is <b>-126, not -127</b>, and the hidden bit is 0 instead of 1. Two special-cases in one, and the naive <code>E - 127</code> formula gets both wrong.
+</div>
+
+<h2>Boundary constants (binary32)</h2>
+<table>
+  <tr><th>Name</th><th class="m">Hex</th><th>Value</th></tr>
+  <tr><td>Smallest positive subnormal</td><td class="m">0x00000001</td><td>2<sup>-149</sup> ≈ 1.4013e-45</td></tr>
+  <tr><td>Largest subnormal</td><td class="m">0x007FFFFF</td><td>≈ 1.1754942e-38</td></tr>
+  <tr><td>Smallest positive normal</td><td class="m">0x00800000</td><td>2<sup>-126</sup> ≈ 1.1754944e-38</td></tr>
+  <tr><td>1.0</td><td class="m">0x3F800000</td><td>1.0</td></tr>
+  <tr><td>Next after 1.0</td><td class="m">0x3F800001</td><td>1 + 2<sup>-23</sup></td></tr>
+  <tr><td>Largest finite</td><td class="m">0x7F7FFFFF</td><td>≈ 3.4028235e38</td></tr>
+  <tr><td>Machine epsilon</td><td class="m">0x34000000</td><td>2<sup>-23</sup> ≈ 1.1920929e-7</td></tr>
+</table>
+
+<div class="badge b-arith">Special-value arithmetic</div>
+<h2>Results that are not the obvious ones</h2>
+
+<table>
+  <tr><th>Expression</th><th>Result</th><th>Flag</th><th>Why</th></tr>
+  <tr><td class="m">(+∞) + (-∞)</td><td class="m">qNaN</td><td class="m">NV</td><td>indeterminate</td></tr>
+  <tr><td class="m">0 × ∞</td><td class="m">qNaN</td><td class="m">NV</td><td>indeterminate</td></tr>
+  <tr><td class="m">0 / 0</td><td class="m">qNaN</td><td class="m">NV</td><td>indeterminate</td></tr>
+  <tr><td class="m">∞ / ∞</td><td class="m">qNaN</td><td class="m">NV</td><td>indeterminate</td></tr>
+  <tr><td class="m">x / 0, x ≠ 0</td><td class="m">±∞</td><td class="m">DZ</td><td>not invalid &mdash; a distinct flag</td></tr>
+  <tr><td class="m">∞ + finite</td><td class="m">∞</td><td>&mdash;</td><td>no flag</td></tr>
+  <tr><td class="m">sqrt(-0)</td><td class="m">-0</td><td>&mdash;</td><td>sign preserved, not NaN</td></tr>
+  <tr><td class="m">sqrt(x), x &lt; 0</td><td class="m">qNaN</td><td class="m">NV</td><td></td></tr>
+  <tr><td class="m">sNaN op anything</td><td class="m">qNaN</td><td class="m">NV</td><td>quieted on the way out</td></tr>
+  <tr><td class="m">qNaN op anything</td><td class="m">qNaN</td><td>&mdash;</td><td>propagates with no flag</td></tr>
+  <tr><td class="m">(+0) + (-0)</td><td class="m">+0</td><td>&mdash;</td><td>RNE/RTZ/RUP; <b>-0 under RDN</b></td></tr>
+  <tr><td class="m">x - x, x finite</td><td class="m">+0</td><td>&mdash;</td><td>same rounding-mode caveat</td></tr>
+  <tr><td class="m">(-0) + (-0)</td><td class="m">-0</td><td>&mdash;</td><td></td></tr>
+  <tr><td class="m">NaN == NaN</td><td class="m">false</td><td>&mdash;</td><td>all compares false except <code>!=</code></td></tr>
+  <tr><td class="m">(+0) == (-0)</td><td class="m">true</td><td>&mdash;</td><td>equal in value, differ in bits</td></tr>
+</table>
+
+<div class="note">
+Two of these bite hardest in a scoreboard. <b>NaN ≠ NaN</b> means you cannot compare results with <code>==</code> &mdash; compare bit patterns with <code>!==</code> and special-case NaN. <b>+0 == -0</b> means the reverse: a numeric compare will pass when the DUT returned the wrong zero sign, so bit-compare that case too.
+</div>
+
+<div class="badge b-flag">Rounding</div>
+<h2>Five modes and the GRS bits</h2>
+<table>
+  <tr><th>Mode</th><th>Abbrev</th><th>Behavior</th></tr>
+  <tr><td>Nearest, ties to even</td><td class="m">RNE</td><td>IEEE default. Ties go to the even mantissa LSB</td></tr>
+  <tr><td>Toward zero</td><td class="m">RTZ</td><td>truncate. Overflow returns max finite, not ∞</td></tr>
+  <tr><td>Toward +∞</td><td class="m">RUP</td><td>ceiling</td></tr>
+  <tr><td>Toward -∞</td><td class="m">RDN</td><td>floor. Makes <code>x - x</code> return -0</td></tr>
+  <tr><td>Nearest, ties away</td><td class="m">RMM</td><td>added in 754-2008</td></tr>
+</table>
+
+<p>Correct rounding needs three extra bits below the mantissa LSB:</p>
+<ul>
+  <li><b>Guard</b> &mdash; first bit shifted out</li>
+  <li><b>Round</b> &mdash; second bit shifted out</li>
+  <li><b>Sticky</b> &mdash; OR of every bit beyond that</li>
+</ul>
+<p>Sticky is the one implementations get wrong, because it must be an OR accumulated over an arbitrarily long shift, not just the next bit. If the alignment shift exceeds the mantissa width, every shifted-out bit collapses into sticky and the guard/round bits are zero.</p>
+
+</div>
+
+<!-- ================= TAB 2 ================= -->
+<div class="panel">
+
+<div class="badge b-arith">Addition</div>
+<h2>1.5 + 2.25 = 3.75</h2>
+<div class="code-block">
+<span class="code-line c">// unpack</span>
+<span class="code-line">1.5   = 0x3FC00000   S=0  E=127 (2^0)  M=100...0   ->  1.1000₂ x 2^0</span>
+<span class="code-line">2.25  = 0x40100000   S=0  E=128 (2^1)  M=001 0...0 ->  1.0010₂ x 2^1</span>
+<span class="code-line"> </span>
+<span class="code-line c">// 1. align to the LARGER exponent: shift 1.5 right by 1</span>
+<span class="code-line">      0.1100₂ x 2^1</span>
+<span class="code-line">    + 1.0010₂ x 2^1</span>
+<span class="code-line">    = 1.1110₂ x 2^1</span>
+<span class="code-line"> </span>
+<span class="code-line c">// 2. normalize: already in [1,2), no shift needed</span>
+<span class="code-line c">// 3. round: G=R=S=0, exact</span>
+<span class="code-line c">// 4. pack</span>
+<span class="code-line">result  S=0  E=128  M=111 0...0  ->  0x40700000  =  3.75</span>
+</div>
+
+<h3>The five steps, in order</h3>
+<ul>
+  <li><b>Unpack</b> &mdash; extract S/E/M, insert the hidden bit (1 for normals, 0 for subnormals)</li>
+  <li><b>Align</b> &mdash; right-shift the smaller operand by the exponent difference, accumulating sticky</li>
+  <li><b>Add or subtract</b> &mdash; effective operation is <code>S_a ^ S_b</code>, not the opcode</li>
+  <li><b>Normalize</b> &mdash; leading-zero count then left-shift, or right-shift by 1 on carry-out</li>
+  <li><b>Round and pack</b> &mdash; apply GRS, re-normalize if rounding carries out of the MSB</li>
+</ul>
+
+<h2>1.0 + 2<sup>-24</sup> = 1.0 &mdash; the tie case</h2>
+<div class="code-block">
+<span class="code-line">1.0     = 1.000...0₂ x 2^0        ulp = 2^-23</span>
+<span class="code-line">2^-24   = 1.000...0₂ x 2^-24      exactly HALF an ulp</span>
+<span class="code-line"> </span>
+<span class="code-line c">// align: shift right by 24 -> falls entirely below the LSB</span>
+<span class="code-line">  1.00000000000000000000000 | G=1 R=0 S=0</span>
+<span class="code-line"> </span>
+<span class="code-line c">// exact tie. RNE breaks it toward the EVEN mantissa.</span>
+<span class="code-line c">// current LSB = 0 (already even) -> round down</span>
+<span class="code-line">result = 0x3F800000 = 1.0        flags: NX (inexact)</span>
+</div>
+<p>Change one thing and the answer changes: <code>(1 + 2⁻²³) + 2⁻²⁴</code> is the same tie, but the LSB is now 1 (odd), so RNE rounds <b>up</b> to <code>1 + 2⁻²²</code>. A DUT that always rounds ties up passes the first test and fails the second.</p>
+
+<h2>Alignment beyond the mantissa width</h2>
+<div class="code-block">
+<span class="code-line">1.0 + 2^-150</span>
+<span class="code-line c">// exponent difference = 150 > 24 bits of precision</span>
+<span class="code-line c">// the entire operand collapses into sticky</span>
+<span class="code-line">  1.00000000000000000000000 | G=0 R=0 S=1</span>
+<span class="code-line">result = 1.0                     flags: NX</span>
+</div>
+<p>Clamp the shift amount. A barrel shifter fed a raw difference of 150 into a 24-bit datapath will wrap or produce zero sticky, and the inexact flag is lost.</p>
+
+<div class="badge b-arith">Multiplication</div>
+<h2>1.5 × 2.25 = 3.375</h2>
+<div class="code-block">
+<span class="code-line c">// multiplication is easier: no alignment step</span>
+<span class="code-line">sign      = S_a XOR S_b        = 0 ^ 0 = 0</span>
+<span class="code-line">exponent  = E_a + E_b - bias   = 127 + 128 - 127 = 128</span>
+<span class="code-line">mantissa  = 1.1000₂ x 1.0010₂  = 1.1011₂  (= 1.6875)</span>
+<span class="code-line"> </span>
+<span class="code-line c">// product of two values in [1,2) lands in [1,4)</span>
+<span class="code-line c">// here it is &lt; 2, so no normalization shift</span>
+<span class="code-line">result    = 1.6875 x 2^1 = 3.375  ->  0x40580000</span>
+</div>
+
+<h3>Where multiplication differs</h3>
+<ul>
+  <li><b>Exponent is a sum</b>, so the bias is subtracted once. Overflow and underflow are detected on that sum, before rounding.</li>
+  <li><b>The product is 2×precision wide</b> &mdash; 48 bits for fp32. All 48 feed the sticky computation.</li>
+  <li><b>Normalization is at most one bit.</b> Two normals in [1,2) give a product in [1,4), so a single right-shift covers it. Subnormal inputs break that guarantee and need a full leading-zero count.</li>
+</ul>
+
+<h2>Overflow and underflow</h2>
+<div class="code-block">
+<span class="code-line c">// overflow: 2^100 x 2^100</span>
+<span class="code-line">exponent = 227 + 227 - 127 = 327   >  254 (max)</span>
+<span class="code-line">RNE / RUP  -> +Inf   0x7F800000     flags: OF, NX</span>
+<span class="code-line">RTZ / RDN  -> max finite 0x7F7FFFFF flags: OF, NX</span>
+<span class="code-line"> </span>
+<span class="code-line c">// underflow to subnormal: 2^-100 x 2^-30</span>
+<span class="code-line">exponent = 27 + 97 - 127 = -3      <  1 (min normal)</span>
+<span class="code-line">-> gradual underflow, encoded as subnormal, precision lost</span>
+<span class="code-line">flags: UF, NX</span>
+<span class="code-line"> </span>
+<span class="code-line c">// underflow to zero: 2^-149 x 2^-149</span>
+<span class="code-line">-> +0                               flags: UF, NX</span>
+</div>
+<div class="note">
+Overflow behavior <b>depends on the rounding mode</b>. RTZ and RDN return the largest finite value rather than infinity. A DUT hardwired to return ∞ on overflow is wrong in two of the five modes.
+</div>
+
+</div>
+
+<!-- ================= TAB 3 ================= -->
+<div class="panel">
+
+<div class="badge b-test">Reference model</div>
+<h2>Get the golden model right first</h2>
+<p>Do not hand-write expected values. Use a trusted model and compare bit patterns.</p>
+<div class="code-block">
+<span class="code-line c">// SV native: shortreal is binary32, real is binary64</span>
+<span class="code-line">bit [31:0] a_bits, b_bits, dut_out, exp_bits;</span>
+<span class="code-line">shortreal  a, b, r;</span>
+<span class="code-line"> </span>
+<span class="code-line">a = $bitstoshortreal(a_bits);</span>
+<span class="code-line">b = $bitstoshortreal(b_bits);</span>
+<span class="code-line">r = a + b;</span>
+<span class="code-line">exp_bits = $shortrealtobits(r);</span>
+<span class="code-line"> </span>
+<span class="code-line c">// bit compare, NOT numeric compare</span>
+<span class="code-line">if (exp_bits !== dut_out) `uvm_error("FP", "mismatch")</span>
+</div>
+<div class="note">
+The host FPU only implements RNE and gives you no access to the exception flags. For the other four rounding modes and for flag checking, bind <b>Berkeley SoftFloat</b> through DPI-C &mdash; it is the reference the RISC-V FP tests use, it exposes <code>softfloat_roundingMode</code> and <code>softfloat_exceptionFlags</code>, and it handles subnormals correctly.
+</div>
+
+<div class="badge b-test">Directed tests</div>
+<h2>Special-value matrix</h2>
+<p>Cross every operand class against every other. For a binary op that is 8 × 8 = 64 cases per rounding mode, all directed, all cheap.</p>
+<table>
+  <tr><th>#</th><th class="m">A</th><th class="m">B</th><th>Op</th><th>Expected</th><th class="m">Flags</th></tr>
+  <tr><td>1</td><td class="m">sNaN</td><td class="m">1.0</td><td>add</td><td>qNaN, quieted</td><td class="m">NV</td></tr>
+  <tr><td>2</td><td class="m">qNaN</td><td class="m">1.0</td><td>mul</td><td>qNaN, payload preserved</td><td>&mdash;</td></tr>
+  <tr><td>3</td><td class="m">+Inf</td><td class="m">-Inf</td><td>add</td><td>qNaN</td><td class="m">NV</td></tr>
+  <tr><td>4</td><td class="m">+Inf</td><td class="m">+Inf</td><td>add</td><td>+Inf</td><td>&mdash;</td></tr>
+  <tr><td>5</td><td class="m">+0</td><td class="m">+Inf</td><td>mul</td><td>qNaN</td><td class="m">NV</td></tr>
+  <tr><td>6</td><td class="m">-0</td><td class="m">+0</td><td>add</td><td>+0 (RNE), <b>-0 (RDN)</b></td><td>&mdash;</td></tr>
+  <tr><td>7</td><td class="m">1.0</td><td class="m">1.0</td><td>sub</td><td>+0 (RNE), <b>-0 (RDN)</b></td><td>&mdash;</td></tr>
+  <tr><td>8</td><td class="m">-2.0</td><td class="m">+3.0</td><td>mul</td><td>-6.0, sign = XOR</td><td>&mdash;</td></tr>
+  <tr><td>9</td><td class="m">maxnorm</td><td class="m">maxnorm</td><td>add</td><td>+Inf (RNE) / maxfinite (RTZ)</td><td class="m">OF NX</td></tr>
+  <tr><td>10</td><td class="m">2^-126</td><td class="m">-2^-149</td><td>add</td><td>largest subnormal</td><td class="m">NX</td></tr>
+  <tr><td>11</td><td class="m">2^-149</td><td class="m">2^-149</td><td>mul</td><td>+0, gradual underflow</td><td class="m">UF NX</td></tr>
+  <tr><td>12</td><td class="m">1.0</td><td class="m">2^-24</td><td>add</td><td>1.0 &mdash; tie to even, LSB even</td><td class="m">NX</td></tr>
+  <tr><td>13</td><td class="m">1.0+2^-23</td><td class="m">2^-24</td><td>add</td><td>1.0+2^-22 &mdash; tie, LSB odd</td><td class="m">NX</td></tr>
+  <tr><td>14</td><td class="m">1.0</td><td class="m">2^-150</td><td>add</td><td>1.0, sticky only</td><td class="m">NX</td></tr>
+  <tr><td>15</td><td class="m">subnormal</td><td class="m">2.0</td><td>mul</td><td>normal &mdash; crosses the boundary upward</td><td>&mdash;</td></tr>
+  <tr><td>16</td><td class="m">-0</td><td class="m">-0</td><td>add</td><td>-0</td><td>&mdash;</td></tr>
+</table>
+
+<div class="badge b-test">Exhaustive</div>
+<h2>Prove it on binary16 first</h2>
+<p>The strongest argument you can make in a review. If the RTL is parameterized by exponent and mantissa width, elaborate it as binary16 and sweep the entire space.</p>
+<table>
+  <tr><th>Scope</th><th>Count</th><th>Feasible?</th></tr>
+  <tr><td>fp16 unary (sqrt, convert, class)</td><td>65,536</td><td>seconds</td></tr>
+  <tr><td>fp16 binary, all pairs</td><td>4.3e9</td><td>overnight in C, sampled in SV</td></tr>
+  <tr><td>fp16 binary × 5 rounding modes</td><td>2.1e10</td><td>C reference only</td></tr>
+  <tr><td>fp32 binary, all pairs</td><td>3.4e19</td><td>never &mdash; constrained random</td></tr>
+</table>
+<p>An exhaustive fp16 pass finds essentially every structural bug &mdash; sticky logic, subnormal handling, tie-breaking, flag generation. What it will not find is anything that depends on the wider datapath, so it complements rather than replaces fp32 random.</p>
+
+<div class="badge b-test">Constrained random</div>
+<h2>Bias toward the boundaries</h2>
+<div class="code-block">
+<span class="code-line">typedef enum { ZERO, SUBNORM, SMALL, NORMAL, LARGE, INF, QNAN, SNAN } fp_class_e;</span>
+<span class="code-line"> </span>
+<span class="code-line">rand fp_class_e cls_a, cls_b;</span>
+<span class="code-line">rand bit [31:0] a, b;</span>
+<span class="code-line">rand bit [2:0]  rm;</span>
+<span class="code-line"> </span>
+<span class="code-line c">// specials are rare in a uniform 32-bit draw -- force them</span>
+<span class="code-line">constraint c_cls {</span>
+<span class="code-line">  cls_a dist { NORMAL := 40, SUBNORM := 15, ZERO := 10, SMALL := 10,</span>
+<span class="code-line">               LARGE  := 10, INF     := 5,  QNAN := 5,  SNAN  := 5 };</span>
+<span class="code-line">}</span>
+<span class="code-line"> </span>
+<span class="code-line c">// near-cancellation: exponents within 2 of each other, opposite signs</span>
+<span class="code-line">constraint c_cancel {</span>
+<span class="code-line">  solve cls_a before a;</span>
+<span class="code-line">  if (near_cancel) {</span>
+<span class="code-line">    a[30:23] - b[30:23] inside {[-2:2]};</span>
+<span class="code-line">    a[31] != b[31];</span>
+<span class="code-line">  }</span>
+<span class="code-line">}</span>
+</div>
+<p>A uniform random 32-bit value is a normal number essentially every time &mdash; infinities and NaNs are 2<sup>-8</sup> of the space and subnormals less than that. Without class-directed constraints, a million random vectors will never test the paths that actually break.</p>
+
+<h2>Coverage model</h2>
+<ul>
+  <li><b>Input class cross</b> &mdash; <code>cls_a × cls_b</code>, all 64 bins, crossed with rounding mode</li>
+  <li><b>Result class</b> &mdash; did the DUT ever <i>produce</i> a subnormal, an infinity, a NaN, a signed zero?</li>
+  <li><b>Flag cross</b> &mdash; each of NV/DZ/OF/UF/NX raised, and the combinations that co-occur (OF always implies NX)</li>
+  <li><b>GRS bins</b> &mdash; all 8 combinations of guard/round/sticky at the rounding point</li>
+  <li><b>Tie cases</b> &mdash; exact ties with LSB even and LSB odd, separately</li>
+  <li><b>Alignment shift</b> &mdash; bins at 0, 1, 23, 24, 25, and &gt; 25 (the clamp boundary)</li>
+  <li><b>Normalization shift</b> &mdash; leading-zero count of 0, 1, mid-range, and maximum (full cancellation)</li>
+</ul>
+
+<div class="badge b-test">Assertions</div>
+<h2>Properties worth binding</h2>
+<div class="code-block">
+<span class="code-line c">// any NaN input must produce a NaN output</span>
+<span class="code-line">a_nan_prop: assert property (@(posedge clk) disable iff (!rst_n)</span>
+<span class="code-line">  (valid_in && (is_nan(a) || is_nan(b))) |-> ##LAT (valid_out && is_nan(result)));</span>
+<span class="code-line"> </span>
+<span class="code-line c">// the DUT must never emit a signaling NaN</span>
+<span class="code-line">a_no_snan_out: assert property (@(posedge clk) disable iff (!rst_n)</span>
+<span class="code-line">  valid_out |-> !is_snan(result));</span>
+<span class="code-line"> </span>
+<span class="code-line c">// exponent field all-ones implies mantissa is either 0 (Inf) or a NaN</span>
+<span class="code-line">a_legal_enc: assert property (@(posedge clk) disable iff (!rst_n)</span>
+<span class="code-line">  valid_out |-> !$isunknown(result));</span>
+<span class="code-line"> </span>
+<span class="code-line c">// overflow always co-occurs with inexact</span>
+<span class="code-line">a_of_implies_nx: assert property (@(posedge clk) disable iff (!rst_n)</span>
+<span class="code-line">  (valid_out && flag_of) |-> flag_nx);</span>
+<span class="code-line"> </span>
+<span class="code-line c">// commutativity of add and mul -- run the same pair both ways</span>
+<span class="code-line c">// (holds bit-exactly in IEEE 754, including NaN payload rules)</span>
+</div>
+
+<h2>Scoreboard gotchas</h2>
+<ul>
+  <li><b>Never compare with <code>==</code> on real values.</b> NaN ≠ NaN, so every NaN test would silently pass. Compare the 32-bit patterns with <code>!==</code>.</li>
+  <li><b>Bit-compare catches the zero-sign bug that numeric compare misses.</b> <code>+0 == -0</code> is true numerically but the encodings differ, and the sign of zero is specified.</li>
+  <li><b>NaN payload propagation is implementation-defined</b> in 754 but usually pinned by your ISA spec. RISC-V, for instance, requires the canonical qNaN <code>0x7FC00000</code> for every NaN-producing operation, so a DUT that forwards the input payload is wrong <i>for that ISA</i>. Check the spec before writing the check.</li>
+  <li><b>Underflow flag timing.</b> 754 permits detecting tininess before or after rounding. The two differ on a narrow band of results. Pick one, document it, and make the reference model match.</li>
+  <li><b>Flush-to-zero mode</b>, if the DUT has one, changes subnormal expectations entirely. Verify both modes, and verify the mode bit itself controls the behavior.</li>
+</ul>
+
+</div>
+
+<script>
+function show(i) {
+  var tabs = document.querySelectorAll('.tab');
+  var panels = document.querySelectorAll('.panel');
+  for (var k = 0; k < tabs.length; k++) {
+    tabs[k].classList.toggle('active', k === i);
+    panels[k].classList.toggle('active', k === i);
+  }
+  window.scrollTo(0, 0);
+}
+</script>
+</body>
+</html>
