@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UVM Class Hierarchy</title>
+<style>
+  :root { --ink:#1a1a1a; --dim:#7a7a7a; --line:#e4e4e4; }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:40px 28px 80px; background:#fff; color:var(--ink);
+    font:15px/1.65 system-ui,-apple-system,sans-serif;
+  }
+  .wrap { max-width:1100px; margin:0 auto; }
+  h1 { font-size:21px; font-weight:600; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:13px; margin:0 0 28px; }
+  h2 { font-size:14px; font-weight:600; margin:40px 0 12px; padding-bottom:7px; border-bottom:1px solid var(--line); }
+  .scroll { overflow-x:auto; padding-bottom:8px; border:1px solid var(--line); border-radius:8px; background:#fcfcfc; }
+  .scroll svg { display:block; }
+  .legend { display:flex; gap:22px; flex-wrap:wrap; margin:14px 0 0; font-size:12.5px; color:var(--dim); }
+  .legend span { display:flex; align-items:center; gap:7px; }
+  .sw { width:22px; height:13px; border-radius:3px; border:1px solid; }
+  .sw.a { background:#fdf6e8; border-color:#d9a441; }
+  .sw.b { background:#f4f8fb; border-color:#93aec4; }
+  .sw.c { background:#fff; border-color:#d0d0d0; }
+  p { margin:0 0 12px; }
+  code { font:12.5px ui-monospace,Menlo,Consolas,monospace; background:#f4f4f4; padding:1px 5px; border-radius:3px; }
+  ol.steps { margin:0; padding-left:0; list-style:none; counter-reset:s; }
+  ol.steps li {
+    counter-increment:s; position:relative; padding:0 0 16px 38px;
+    border-left:1px solid var(--line); margin-left:11px;
+  }
+  ol.steps li:last-child { border-left-color:transparent; padding-bottom:0; }
+  ol.steps li::before {
+    content:counter(s); position:absolute; left:-11px; top:1px;
+    width:21px; height:21px; border-radius:50%; background:#fff;
+    border:1px solid var(--line); color:var(--dim);
+    font:600 10px/19px ui-monospace,monospace; text-align:center;
+  }
+  .hl { background:#fdf6e8; color:#8a6314; font-weight:600; padding:0 4px; border-radius:3px;
+        font:600 12.5px ui-monospace,monospace; }
+  /* svg */
+  .lk { fill:none; stroke:#cfcfcf; stroke-width:1.1; }
+  .bx { fill:#fff; stroke:#d0d0d0; stroke-width:1; }
+  .bx.sp { fill:#f4f8fb; stroke:#93aec4; }
+  .bx.ex { fill:#fdf6e8; stroke:#d9a441; }
+  .nm { font:600 10.5px ui-monospace,Menlo,Consolas,monospace; fill:#1a1a1a; }
+  .nm.sm { font-size:9px; }
+  .rl { font:8.5px system-ui,sans-serif; fill:#8f8f8f; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>UVM class hierarchy</h1>
+<p class="sub">Rooted at uvm_void &middot; scroll horizontally</p>
+
+<h2>Main tree</h2>
+<div class="scroll">
+<svg width="2240" height="670" viewBox="0 0 2240 670" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- links -->
+  <path class="lk" d="M1422 80 V120"/>
+  <path class="lk" d="M1422 170 V190 M754 190 H2090 M754 190 V210 M1546 190 V210 M1690 190 V210 M1870 190 V210 M2090 190 V210"/>
+  <path class="lk" d="M754 260 V300"/>
+  <path class="lk" d="M754 350 V370 H106 V390 M250 370 V390 M394 370 V390 M538 370 V390 M682 370 V390 M826 370 V390 M970 370 V390 M1114 370 V390 M1258 370 V390 M1402 370 V390 M106 370 H1402"/>
+  <path class="lk" d="M1546 260 V300"/>
+  <path class="lk" d="M1546 350 V390"/>
+  <path class="lk" d="M1546 440 V480"/>
+  <path class="lk" d="M1690 260 V300"/>
+  <path class="lk" d="M1114 440 V480"/>
+  <path class="lk" d="M1258 440 V480"/>
+  <path class="lk" d="M1402 440 V480"/>
+  <path class="lk" d="M1402 530 V570"/>
+
+  <!-- L0 -->
+  <rect class="bx sp" x="1356" y="30" width="132" height="50" rx="5"/>
+  <text class="nm" x="1422" y="50" text-anchor="middle">uvm_void</text>
+  <text class="rl" x="1422" y="65" text-anchor="middle">abstract, empty</text>
+
+  <!-- L1 -->
+  <rect class="bx sp" x="1356" y="120" width="132" height="50" rx="5"/>
+  <text class="nm" x="1422" y="140" text-anchor="middle">uvm_object</text>
+  <text class="rl" x="1422" y="155" text-anchor="middle">virtual &middot; data</text>
+
+  <!-- L2 -->
+  <rect class="bx sp" x="688" y="210" width="132" height="50" rx="5"/>
+  <text class="nm sm" x="754" y="230" text-anchor="middle">uvm_report_object</text>
+  <text class="rl" x="754" y="245" text-anchor="middle">`uvm_info / error / fatal</text>
+
+  <rect class="bx sp" x="1480" y="210" width="132" height="50" rx="5"/>
+  <text class="nm" x="1546" y="230" text-anchor="middle">uvm_transaction</text>
+  <text class="rl" x="1546" y="245" text-anchor="middle">timestamps, recording</text>
+
+  <rect class="bx" x="1624" y="210" width="132" height="50" rx="5"/>
+  <text class="nm" x="1690" y="230" text-anchor="middle">uvm_phase</text>
+  <text class="rl" x="1690" y="245" text-anchor="middle">phase graph</text>
+
+  <rect class="bx" x="1770" y="210" width="200" height="50" rx="5"/>
+  <text class="nm" x="1870" y="230" text-anchor="middle">register model</text>
+  <text class="rl" x="1870" y="245" text-anchor="middle">reg_block, reg, reg_field, mem, adapter</text>
+
+  <rect class="bx" x="1990" y="210" width="200" height="50" rx="5"/>
+  <text class="nm" x="2090" y="230" text-anchor="middle">uvm_policy</text>
+  <text class="rl" x="2090" y="245" text-anchor="middle">printer, comparer, packer, recorder</text>
+
+  <!-- L3 -->
+  <rect class="bx sp" x="688" y="300" width="132" height="50" rx="5"/>
+  <text class="nm" x="754" y="320" text-anchor="middle">uvm_component</text>
+  <text class="rl" x="754" y="335" text-anchor="middle">virtual &middot; hierarchy + phases</text>
+
+  <rect class="bx ex" x="1480" y="300" width="132" height="50" rx="5"/>
+  <text class="nm sm" x="1546" y="320" text-anchor="middle">uvm_sequence_item</text>
+  <text class="rl" x="1546" y="335" text-anchor="middle">driver handshake fields</text>
+
+  <rect class="bx" x="1624" y="300" width="132" height="50" rx="5"/>
+  <text class="nm" x="1690" y="325" text-anchor="middle">uvm_domain</text>
+
+  <!-- L4 components -->
+  <rect class="bx" x="40" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="106" y="410" text-anchor="middle">uvm_root</text>
+  <text class="rl" x="106" y="425" text-anchor="middle">singleton = uvm_top</text>
+
+  <rect class="bx ex" x="184" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="250" y="415" text-anchor="middle">uvm_test</text>
+
+  <rect class="bx ex" x="328" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="394" y="415" text-anchor="middle">uvm_env</text>
+
+  <rect class="bx ex" x="472" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="538" y="415" text-anchor="middle">uvm_agent</text>
+
+  <rect class="bx ex" x="616" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="682" y="415" text-anchor="middle">uvm_monitor</text>
+
+  <rect class="bx ex" x="760" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="826" y="415" text-anchor="middle">uvm_scoreboard</text>
+
+  <rect class="bx ex" x="904" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="970" y="410" text-anchor="middle">uvm_driver</text>
+  <text class="rl" x="970" y="425" text-anchor="middle">#(REQ, RSP)</text>
+
+  <rect class="bx ex" x="1048" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="1114" y="410" text-anchor="middle">uvm_subscriber</text>
+  <text class="rl" x="1114" y="425" text-anchor="middle">#(T)</text>
+
+  <rect class="bx" x="1192" y="390" width="132" height="50" rx="5"/>
+  <text class="nm" x="1258" y="410" text-anchor="middle">uvm_port_base</text>
+  <text class="rl" x="1258" y="425" text-anchor="middle">#(IF)</text>
+
+  <rect class="bx" x="1336" y="390" width="132" height="50" rx="5"/>
+  <text class="nm sm" x="1402" y="415" text-anchor="middle">uvm_sequencer_base</text>
+
+  <rect class="bx sp" x="1480" y="390" width="132" height="50" rx="5"/>
+  <text class="nm sm" x="1546" y="415" text-anchor="middle">uvm_sequence_base</text>
+
+  <!-- L5 -->
+  <rect class="bx" x="1048" y="480" width="132" height="50" rx="5"/>
+  <text class="nm sm" x="1114" y="500" text-anchor="middle">uvm_reg_predictor</text>
+  <text class="rl" x="1114" y="515" text-anchor="middle">#(BUSTYPE)</text>
+
+  <rect class="bx" x="1188" y="480" width="140" height="50" rx="5"/>
+  <text class="nm" x="1258" y="500" text-anchor="middle">port / export / imp</text>
+  <text class="rl" x="1258" y="515" text-anchor="middle">uvm_*_port, _export, _imp</text>
+
+  <rect class="bx" x="1322" y="480" width="160" height="50" rx="5"/>
+  <text class="nm sm" x="1402" y="505" text-anchor="middle">uvm_sequencer_param_base</text>
+
+  <rect class="bx ex" x="1480" y="480" width="132" height="50" rx="5"/>
+  <text class="nm" x="1546" y="500" text-anchor="middle">uvm_sequence</text>
+  <text class="rl" x="1546" y="515" text-anchor="middle">#(REQ, RSP)</text>
+
+  <!-- L6 -->
+  <rect class="bx ex" x="1336" y="570" width="132" height="50" rx="5"/>
+  <text class="nm" x="1402" y="590" text-anchor="middle">uvm_sequencer</text>
+  <text class="rl" x="1402" y="605" text-anchor="middle">#(REQ, RSP)</text>
+
+</svg>
+</div>
+
+<div class="legend">
+  <span><i class="sw a"></i> classes you extend in daily work</span>
+  <span><i class="sw b"></i> abstract spine</span>
+  <span><i class="sw c"></i> infrastructure</span>
+</div>
+
+<h2>Factory and core services</h2>
+<div class="scroll">
+<svg width="730" height="270" viewBox="0 0 730 270" xmlns="http://www.w3.org/2000/svg">
+  <path class="lk" d="M390 70 V90 M170 90 H610 M170 90 V110 M430 90 V110 M610 90 V110"/>
+  <path class="lk" d="M170 160 V180 H90 V200 M250 180 V200 M90 180 H250"/>
+  <path class="lk" d="M430 160 V200"/>
+  <path class="lk" d="M610 160 V200"/>
+
+  <rect class="bx sp" x="324" y="20" width="132" height="50" rx="5"/>
+  <text class="nm" x="390" y="45" text-anchor="middle">uvm_void</text>
+
+  <rect class="bx" x="95" y="110" width="150" height="50" rx="5"/>
+  <text class="nm sm" x="170" y="130" text-anchor="middle">uvm_object_wrapper</text>
+  <text class="rl" x="170" y="145" text-anchor="middle">what the factory registers</text>
+
+  <rect class="bx" x="355" y="110" width="150" height="50" rx="5"/>
+  <text class="nm" x="430" y="130" text-anchor="middle">uvm_factory</text>
+  <text class="rl" x="430" y="145" text-anchor="middle">virtual</text>
+
+  <rect class="bx" x="535" y="110" width="150" height="50" rx="5"/>
+  <text class="nm sm" x="610" y="130" text-anchor="middle">uvm_coreservice_t</text>
+  <text class="rl" x="610" y="145" text-anchor="middle">1800.2 accessor</text>
+
+  <rect class="bx" x="15" y="200" width="150" height="50" rx="5"/>
+  <text class="nm sm" x="90" y="220" text-anchor="middle">uvm_object_registry</text>
+  <text class="rl" x="90" y="235" text-anchor="middle">#(T, Tname)</text>
+
+  <rect class="bx" x="175" y="200" width="150" height="50" rx="5"/>
+  <text class="nm sm" x="250" y="220" text-anchor="middle">uvm_component_registry</text>
+  <text class="rl" x="250" y="235" text-anchor="middle">#(T, Tname)</text>
+
+  <rect class="bx" x="355" y="200" width="150" height="50" rx="5"/>
+  <text class="nm sm" x="430" y="225" text-anchor="middle">uvm_default_factory</text>
+
+  <rect class="bx" x="525" y="200" width="170" height="50" rx="5"/>
+  <text class="nm sm" x="610" y="225" text-anchor="middle">uvm_default_coreservice_t</text>
+</svg>
+</div>
+
+<h2>Object vs component</h2>
+<p><code>uvm_object</code> is data. No parent, no phases, created and discarded freely &mdash;
+sequence items, sequences, register model classes.
+<code>uvm_component</code> is structure. It has a parent, a full hierarchical name, and it runs phases.
+Built once in <code>build_phase</code>, alive for the whole simulation.</p>
+<p>That split is why the utils macros differ, and why a sequence is created with
+<code>type_id::create(name)</code> while a component needs
+<code>type_id::create(name, this)</code> &mdash; the second argument is the parent,
+which only components have.</p>
+
+<h2>What run_test() creates, in order</h2>
+<ol class="steps">
+  <li><b>Static initialization.</b> Every <code>`uvm_*_utils</code> macro registers a
+      <code>uvm_object_wrapper</code> singleton with the factory. Nothing is instantiated yet &mdash;
+      the factory only learns what types exist.</li>
+  <li><b>uvm_coreservice_t</b> on first access, which creates the
+      <b>factory</b>, the <b>report server</b>, and <b>uvm_root</b>.</li>
+  <li><b>uvm_root</b> is itself a component &mdash; the only one with no parent.
+      Its instance name is the empty string, which is why it never appears in a path.
+      The global handle is <code>uvm_top</code>.</li>
+  <li><b>run_test("my_test")</b> forwards to <code>uvm_root::get().run_test(...)</code>.
+      A <code>+UVM_TESTNAME=</code> plusarg overrides the string argument.</li>
+  <li><b>The test component</b> &mdash; the first thing your code owns.
+      Created as <code>create_component_by_name(test_name, "", "uvm_test_top", null)</code>.
+      The instance name is always <span class="hl">uvm_test_top</span> regardless of your class name,
+      which is why override paths read <code>uvm_test_top.env.agent.driver</code>.</li>
+  <li><b>build_phase</b> runs top-down: test creates env, env creates agents,
+      agents create driver / monitor / sequencer.</li>
+  <li><b>connect_phase</b> and <b>end_of_elaboration</b> bottom-up,
+      <b>start_of_simulation</b> top-down. All zero-time.</li>
+  <li><b>run_phase</b> &mdash; the first phase that consumes time,
+      and where sequence items start being created and discarded continuously.</li>
+</ol>
+
+</div>
+</body>
+</html>
