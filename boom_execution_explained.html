@@ -441,6 +441,84 @@
   RDN (toward −∞), RUP (toward +∞), RMM (to nearest, ties away). Instructions can also
   encode DYN to use <code>frm</code>. Rounding mode changes which corner you land on:
   <code>1e308 − 1e308·(1−ε)</code> is +0 under RNE but −0 under RDN.</p>
+
+  <h3>Inside the FPU — how add and multiply actually work</h3>
+  <p>Every pipelined FP op walks the same five stations:
+  <b>unpack</b> (split sign/exponent/significand, restore the implicit 1, branch off
+  the special cases) → <b>align or multiply</b> → <b>normalize</b> (put the result
+  back into 1.xxx form) → <b>round</b> (RNE using guard + sticky bits) →
+  <b>pack</b>. Two fully worked examples, every bit real
+  (div/sqrt are different: they grind one result bit per cycle in the un-pipelined
+  FDiv/Sqrt unit instead):</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">Worked example 1 — FADD.D: 2.25 + 1.5</h3>
+    <pre>a = fl(2.25) = 0x4002_0000_0000_0000 = 1.001₂ × 2¹
+b = fl(1.5)  = 0x3FF8_0000_0000_0000 = 1.1₂   × 2⁰</pre>
+    <table>
+      <tr><th>Step</th><th>What happens</th><th class="mono">Values</th></tr>
+      <tr><td><b>1. Unpack</b></td><td>split sign/exp/mantissa, restore the implicit 1,
+          check specials (none here)</td>
+          <td class="mono">e_a=1, e_b=0</td></tr>
+      <tr><td><b>2. Align</b></td><td>exponent difference = 1 → shift the <i>smaller</i>
+          operand's significand right 1 so both share exponent 2¹. Any bits that fall off
+          the right end would be compressed into the <b>sticky</b> bit — this is where
+          precision is lost when the exponents are far apart (add a tiny number to a huge
+          one and the small significand shifts away entirely).</td>
+          <td class="mono">b → 0.11₂ × 2¹</td></tr>
+      <tr><td><b>3. Add</b></td><td>one wide integer addition of the aligned significands
+          (same-sign add; effective subtraction would instead cancel and possibly need a
+          big left-shift)</td>
+          <td class="mono">1.001 + 0.110 = 1.111₂ × 2¹</td></tr>
+      <tr><td><b>4. Normalize</b></td><td>sum is already in [1,2) → no shift
+          (a sum ≥ 2 would shift right 1 and bump the exponent)</td>
+          <td class="mono">—</td></tr>
+      <tr><td><b>5. Round</b></td><td>guard=0, sticky=0 → nothing was shifted out,
+          nothing to round: the result is <b>exact</b>, no flags at all</td>
+          <td class="mono">NX=0</td></tr>
+      <tr><td><b>6. Pack</b></td><td>reassemble sign/exp/mantissa</td>
+          <td class="mono">0x400E_0000_0000_0000 = 3.75 ✓</td></tr>
+    </table>
+    <p class="note">Same values in FP32: 2.25 = <code>0x4010_0000</code>,
+    1.5 = <code>0x3FC0_0000</code>, 3.75 = <code>0x4070_0000</code> — identical steps,
+    just bias 127 and a 23-bit mantissa.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Worked example 2 — FMUL.D: 2.25 × 2.25</h3>
+    <pre>a = b = fl(2.25) = 0x4002_0000_0000_0000 = 1.001₂ × 2¹</pre>
+    <table>
+      <tr><th>Step</th><th>What happens</th><th class="mono">Values</th></tr>
+      <tr><td><b>1. Unpack</b></td><td>split fields; specials would branch off here
+          (inf×0 → qNaN+NV …)</td>
+          <td class="mono">e=1 each</td></tr>
+      <tr><td><b>2. Sign / exponent</b></td><td>sign = s_a ⊕ s_b; exponents simply
+          <b>add</b> (no alignment needed — this is why FP multipliers are structurally
+          <i>simpler</i> than adders)</td>
+          <td class="mono">s=0, e = 1+1 = 2</td></tr>
+      <tr><td><b>3. Multiply</b></td><td>integer multiply of the significands
+          (53×53 → up to 106 bits in hardware; here 1001₂ × 1001₂ = 1010001₂);
+          this multiplier array is the big silicon of the FPU and the core of the FMA unit</td>
+          <td class="mono">P = 1.010001₂&nbsp;&nbsp;((9/8)² = 1.265625)</td></tr>
+      <tr><td><b>4. Normalize</b></td><td>a product of [1,2)² lands in [1,4);
+          here P &lt; 2 → no shift (if P ≥ 2: shift right 1, exponent+1)</td>
+          <td class="mono">—</td></tr>
+      <tr><td><b>5. Round</b></td><td>everything below bit 52 is zero → guard=0,
+          sticky=0 → <b>exact</b>, no flags</td>
+          <td class="mono">NX=0</td></tr>
+      <tr><td><b>6. Pack</b></td><td>reassemble</td>
+          <td class="mono">0x4014_4000_0000_0000 = 5.0625 ✓ = 1.010001₂ × 2²</td></tr>
+    </table>
+    <div class="note"><b>Why these examples are exact — and most aren't:</b> 2.25 and 1.5
+    have short binary fractions, so nothing ever falls off the end of the datapath.
+    Feed the same pipeline decimal-friendly values instead and rounding appears at step 5:
+    <code>fl(16.9) × fl(16.9)</code> ends one ulp <b>below</b> <code>fl(285.61)</code>
+    (so <code>16.9 × 16.9 == 285.61</code> is <i>false</i> in floating point!), while
+    <code>sqrt(fl(285.61))</code> lands one ulp <i>above</i> <code>fl(16.9)</code> — both
+    correct per IEEE-754, with NX=1. Verification lesson: a scoreboard must predict the
+    <b>correctly-rounded result of the actual binary inputs</b> (softfloat-style, bit-exact),
+    never the decimal answer a human expects — otherwise it fails correct RTL by one ulp.</div>
+  </div>
 </section>
 
 <!-- =============================== VERIF =============================== -->
