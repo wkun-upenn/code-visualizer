@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cache Coherence: VI → MSI → MESI → MOESI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --panel2:#f7f9fb; --ink:#161a1f; --muted:#5f6873; --line:#d3d9e0;
+  --trace:#c7ced6; --trace-hot:#1f5eff;
+  --s-I:#8a939e; --s-V:#0e8f86; --s-S:#2563eb; --s-E:#12923f; --s-M:#d92b2b; --s-O:#7c3aed;
+  --good:#146c33; --good-bg:#e1f5e8; --bad:#b21c1c; --bad-bg:#fbe4e4; --info:#1e4fb8; --info-bg:#e3ebfb;
+  --focus:#1f5eff;
+  --sans:'Manrope',system-ui,-apple-system,'Segoe UI','PingFang SC','Hiragino Sans GB','Noto Sans SC','Microsoft YaHei',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171b; --panel:#1d2126; --panel2:#232830; --ink:#e8ebef; --muted:#9aa4b0; --line:#343b45;
+    --trace:#3a424d; --trace-hot:#5b8cff;
+    --s-I:#6f7883; --s-V:#1fb3a8; --s-S:#4f86f7; --s-E:#2fbf5e; --s-M:#f04c4c; --s-O:#a077ff;
+    --good:#5fd88a; --good-bg:#17301f; --bad:#ff8a8a; --bad-bg:#3a1c1c; --info:#8fb3ff; --info-bg:#1b2942;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171b; --panel:#1d2126; --panel2:#232830; --ink:#e8ebef; --muted:#9aa4b0; --line:#343b45;
+  --trace:#3a424d; --trace-hot:#5b8cff;
+  --s-I:#6f7883; --s-V:#1fb3a8; --s-S:#4f86f7; --s-E:#2fbf5e; --s-M:#f04c4c; --s-O:#a077ff;
+  --good:#5fd88a; --good-bg:#17301f; --bad:#ff8a8a; --bad-bg:#3a1c1c; --info:#8fb3ff; --info-bg:#1b2942;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:28px;font-weight:700;letter-spacing:-.01em;margin:0 0 6px}
+.lead{color:var(--muted);margin:0 0 22px;max-width:70ch}
+.tabs{display:flex;gap:6px;border-bottom:2px solid var(--line);margin-bottom:18px}
+.tab{appearance:none;background:none;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:10px 18px;font:600 15px var(--mono);color:var(--muted);cursor:pointer;letter-spacing:.02em}
+.tab:hover{color:var(--ink)}
+.tab.active{color:var(--ink);border-bottom-color:var(--trace-hot)}
+.tab:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+.panel h2{font-size:17px;margin:0 0 8px;font-weight:700}
+.panel p{margin:0 0 10px}
+.defs{display:grid;gap:8px;margin-top:10px}
+.def{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.def b{font-weight:600}
+.badge{display:inline-block;min-width:26px;text-align:center;font:600 13px/1 var(--mono);padding:5px 7px;border-radius:5px;color:#fff;background:var(--s-I);flex:none}
+.s-I{background:var(--s-I)} .s-V{background:var(--s-V)} .s-S{background:var(--s-S)} .s-E{background:var(--s-E)} .s-M{background:var(--s-M)} .s-O{background:var(--s-O)}
+
+/* ---------- simulation stage ---------- */
+.stage{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:22px 18px 18px;overflow:hidden}
+.cores{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.core{background:var(--panel);border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;position:relative;transition:border-color .25s,box-shadow .25s}
+.core.acting{border-color:var(--trace-hot);box-shadow:0 0 0 3px color-mix(in srgb,var(--trace-hot) 20%,transparent)}
+.core.changed .badge{animation:flash .6s ease}
+@keyframes flash{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+.core-name{font:600 12px var(--mono);color:var(--muted);margin-bottom:6px;letter-spacing:.04em}
+.core .line{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel2);border-radius:6px;padding:8px 10px}
+.val{font:600 14px var(--mono)}
+.val.empty{color:var(--muted);font-weight:400}
+.pin{position:absolute;left:50%;bottom:-16px;width:2px;height:16px;background:var(--trace);transform:translateX(-50%)}
+.bus{margin:16px 0;height:34px;border-radius:6px;background:var(--trace);display:flex;align-items:center;justify-content:space-between;padding:0 12px;position:relative}
+.bus-label{font:600 12px var(--mono);color:var(--ink);opacity:.7;letter-spacing:.04em}
+.bus-chip{font:600 13px var(--mono);background:var(--trace-hot);color:#fff;padding:4px 10px;border-radius:5px;opacity:0;transition:opacity .2s}
+.bus-chip.on{opacity:1;animation:pulse .5s ease}
+@keyframes pulse{0%{transform:scale(.8)}60%{transform:scale(1.08)}100%{transform:scale(1)}}
+.mem{background:var(--panel);border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;width:min(320px,100%);margin:0 auto;position:relative}
+.mem .pin{bottom:auto;top:-16px}
+.mem .line{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel2);border-radius:6px;padding:8px 10px}
+.flag{font:600 11px var(--mono);padding:2px 7px;border-radius:4px;color:var(--bad);background:var(--bad-bg);display:none}
+.flag.on{display:inline-block}
+.packet{position:absolute;left:0;top:0;z-index:5;font:600 12px var(--mono);background:var(--ink);color:var(--bg);padding:3px 8px;border-radius:5px;white-space:nowrap;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+
+/* ---------- controls ---------- */
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:600 14px var(--sans);padding:8px 14px;border-radius:7px;cursor:pointer}
+.btn:hover:not(:disabled){border-color:var(--ink)}
+.btn.primary{background:var(--trace-hot);border-color:var(--trace-hot);color:#fff}
+.btn:disabled{opacity:.4;cursor:default}
+.step-label{font:600 13px var(--mono);color:var(--muted);margin-left:auto}
+.dots{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.dot{width:26px;height:8px;border-radius:4px;border:0;background:var(--line);cursor:pointer;padding:0}
+.dot.done{background:var(--muted)}
+.dot.active{background:var(--trace-hot)}
+.step-box{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.step-action{font:700 16px var(--sans);margin:0 0 6px}
+.step-action code{font:600 13px var(--mono);background:var(--panel2);border:1px solid var(--line);padding:2px 7px;border-radius:5px;margin-left:8px;vertical-align:middle}
+.step-desc{margin:0;max-width:72ch}
+.note{margin-top:10px;padding:9px 12px;border-radius:7px;font-size:14px;border-left:3px solid;display:none}
+.note.on{display:block}
+.note.good{color:var(--good);background:var(--good-bg);border-color:var(--good)}
+.note.bad{color:var(--bad);background:var(--bad-bg);border-color:var(--bad)}
+.note.info{color:var(--info);background:var(--info-bg);border-color:var(--info)}
+.stats{display:flex;gap:18px;margin-top:12px;font:500 13px var(--mono);color:var(--muted)}
+.stats b{color:var(--ink);font-size:16px;margin-right:4px}
+
+/* ---------- diagram ---------- */
+svg.diagram{width:100%;height:auto;display:block}
+.diagram .node circle{fill:var(--panel);stroke:var(--line);stroke-width:2}
+.diagram .node.on circle{stroke-width:3}
+.diagram .node text.letter{font:600 15px var(--mono);fill:var(--ink);text-anchor:middle}
+.diagram .node text.tags{font:600 8.5px var(--mono);fill:var(--muted);text-anchor:middle}
+.diagram .edge path{fill:none;stroke:var(--line);stroke-width:1.6}
+.diagram .edge text{font:500 8.5px var(--mono);fill:var(--muted);text-anchor:middle}
+.diagram .edge rect{fill:var(--panel);opacity:.92}
+.diagram .edge.hi-proc path{stroke:var(--trace-hot);stroke-width:2.6}
+.diagram .edge.hi-proc text{fill:var(--trace-hot);font-weight:600}
+.diagram .edge.hi-snoop path{stroke:var(--s-M);stroke-width:2.2;stroke-dasharray:5 3}
+.diagram .edge.hi-snoop text{fill:var(--s-M);font-weight:600}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:18px;height:0;border-top:2.5px solid;margin-right:6px;vertical-align:middle}
+.legend .lp::before{border-color:var(--trace-hot)} .legend .ls::before{border-color:var(--s-M);border-top-style:dashed}
+
+/* ---------- problem card ---------- */
+.problem{border-left:4px solid var(--s-M)}
+.problem.final{border-left-color:var(--s-O)}
+.problem .next{margin-top:10px;padding:10px 12px;border-radius:7px;background:var(--panel2);font-size:14px}
+.problem .next b{font-family:var(--mono);font-weight:600}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:12.5px}
+td:first-child{font:600 13px var(--mono)}
+.yes{color:var(--good);font-weight:700}.no{color:var(--bad);font-weight:700}
+.tbl-wrap{overflow-x:auto}
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px 18px;font-size:13.5px;margin-top:6px}
+.gloss code{font:600 12.5px var(--mono);background:var(--panel2);border:1px solid var(--line);padding:1px 6px;border-radius:4px}
+.bottom{margin-top:18px;display:grid;gap:18px}
+@media (prefers-reduced-motion:reduce){.core.changed .badge,.bus-chip.on{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cache Coherence Protocols</h1>
+  <p class="lead">同一根总线上的三个 core 访问同一个 block X。逐步执行每个协议，看状态如何变化、总线上发生了什么，以及为什么每个协议都要在前一个的基础上多加一个 state。</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-k="VI">VI</button>
+    <button class="tab" role="tab" data-k="MSI">MSI</button>
+    <button class="tab" role="tab" data-k="MESI">MESI</button>
+    <button class="tab" role="tab" data-k="MOESI">MOESI</button>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <h2 id="p-title"></h2>
+        <p id="p-intro"></p>
+        <div class="defs" id="p-defs"></div>
+      </div>
+
+      <div class="panel" style="margin-top:18px">
+        <div class="stage" id="stage">
+          <div class="cores" id="cores">
+            <div class="core" data-core="0"><div class="core-name">P0 · L1 cache</div><div class="line"><span class="badge s-I">I</span><span class="val empty">—</span></div><div class="pin"></div></div>
+            <div class="core" data-core="1"><div class="core-name">P1 · L1 cache</div><div class="line"><span class="badge s-I">I</span><span class="val empty">—</span></div><div class="pin"></div></div>
+            <div class="core" data-core="2"><div class="core-name">P2 · L1 cache</div><div class="line"><span class="badge s-I">I</span><span class="val empty">—</span></div><div class="pin"></div></div>
+          </div>
+          <div class="bus" id="bus"><span class="bus-label">Shared bus (snooped by all)</span><span class="bus-chip" id="bus-chip"></span></div>
+          <div class="mem" id="mem"><div class="pin"></div><div class="core-name">Main memory</div><div class="line"><span class="val" id="mem-val">X = 0</span><span class="flag" id="mem-flag">STALE</span></div></div>
+        </div>
+
+        <div class="controls">
+          <button class="btn" id="btn-prev">上一步</button>
+          <button class="btn primary" id="btn-next">下一步</button>
+          <button class="btn" id="btn-reset">重置</button>
+          <span class="step-label" id="step-label"></span>
+        </div>
+        <div class="dots" id="dots"></div>
+
+        <div class="step-box">
+          <p class="step-action" id="step-action"></p>
+          <p class="step-desc" id="step-desc"></p>
+          <div class="note" id="note"></div>
+          <div class="stats">
+            <span><b id="st-bus">0</b>bus transactions</span>
+            <span><b id="st-rd">0</b>memory reads</span>
+            <span><b id="st-wr">0</b>memory writes</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>State transition diagram</h2>
+        <svg class="diagram" id="diagram" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="legend"><span class="lp">当前 core 的请求 (processor side)</span><span class="ls">其他 core 的 snoop 反应 (bus side)</span></div>
+      </div>
+      <div class="panel problem" id="problem" style="margin-top:18px"></div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="panel">
+      <h2>四个协议对比</h2>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>协议</th><th>States</th><th>多个 reader 同时共享</th><th>私有数据 读→写 不占总线</th><th>dirty 块被读 不写回 memory</th><th>新增 state 解决的问题</th></tr></thead>
+        <tbody>
+          <tr><td>VI</td><td>V I</td><td class="no">✗</td><td class="yes">✓</td><td class="no">✗</td><td>—</td></tr>
+          <tr><td>MSI</td><td>M S I</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td>S：把"有效"拆成"唯一可写 (M)"和"多份只读 (S)"</td></tr>
+          <tr><td>MESI</td><td>M E S I</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">✗</td><td>E：读 miss 时得知自己是唯一副本，之后写不用广播</td></tr>
+          <tr><td>MOESI</td><td>M O E S I</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td>O：dirty 副本可被共享，owner 负责供数，写回推迟到 eviction</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>术语</h2>
+      <div class="gloss">
+        <div><code>PrRd</code> / <code>PrWr</code> — 本 core 发出的读 / 写请求</div>
+        <div><code>BusRd</code> — 总线读：我要一份副本（读）</div>
+        <div><code>BusRdX</code> — 读并独占：我要写，其他副本全部失效</div>
+        <div><code>BusUpgr</code> — 我已有 S 副本，只需让其他副本失效</div>
+        <div><code>Flush</code> — 持有 dirty 副本的 cache 把数据放到总线上</div>
+        <div><code>snoop</code> — 每个 cache 监听总线，对别人的事务做出反应</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const STATE_NAMES={I:'Invalid',V:'Valid',S:'Shared',E:'Exclusive',M:'Modified',O:'Owned'};
+const st=(bus,memRd,memWr)=>({bus,memRd,memWr});
+const p=(core,from,to)=>({core,from,to,k:'proc'});
+const sn=(core,from,to)=>({core,from,to,k:'snoop'});
+
+const PROTOCOLS={
+VI:{
+  title:'VI — Valid / Invalid',
+  intro:'最简单的 invalidate 协议。一个 block 在整个系统里最多只有一份有效副本：谁持有 V，谁就有独占的读写权；其他 cache 一律 I。',
+  stateDefs:[
+    {s:'V',d:'本 cache 持有唯一的有效副本，可直接读写。副本可能已经被写过（dirty），失效前必须写回。'},
+    {s:'I',d:'无效。任何访问都是 miss，需要上总线。'}],
+  nodes:{I:[100,150],V:[280,150]},
+  loops:{V:'PrRd, PrWr hit'},
+  edges:[{f:'I',t:'V',l:'PrRd, PrWr / BusRd(X)'},{f:'V',t:'I',l:'snoop BusRd(X) / Flush if dirty'}],
+  problem:{
+    title:'问题：只读共享做不到',
+    body:'第 2、3 步里 P0 和 P1 只是想同时<em>读</em>同一个 block，VI 却把每次读当成独占请求，逼对方 invalidate。只读数据（代码、常量、共享查找表）本来可以安全地存在于多个 cache 里，在 VI 下却会无休止地 ping-pong，每次读都是一次 miss 加一次总线事务。',
+    next:'<b>→ MSI</b>：把 V 拆成两个 state——<b>M</b>（唯一副本、dirty、可写）和 <b>S</b>（可以多份、clean、只读）。'},
+  steps:[
+    {who:0,action:'P0 读 X',bus:'BusRd',desc:'P0 miss，在总线上发 BusRd。没有其他 cache 持有 X，memory 供数，P0 进入 V。',
+     states:['V','I','I'],values:[0,null,null],mem:0,flows:[{from:'mem',to:0,label:'X=0'}],trans:[p(0,'I','V')],stats:st(1,1,0)},
+    {who:1,action:'P1 读 X',bus:'BusRd',desc:'P1 miss，发 BusRd。VI 只允许一份有效副本：P0 snoop 到 BusRd 后必须变 I（副本是 clean，不用写回）。memory 供数给 P1。',
+     note:{t:'bad',x:'P1 只想读一下，P0 却被迫丢掉自己的副本。'},
+     states:['I','V','I'],values:[null,0,null],mem:0,flows:[{from:'mem',to:1,label:'X=0'}],trans:[p(1,'I','V'),sn(0,'V','I')],stats:st(1,1,0)},
+    {who:0,action:'P0 再读 X',bus:'BusRd',desc:'P0 刚被 invalidate，又 miss，再发 BusRd，这次轮到 P1 被 invalidate。',
+     note:{t:'bad',x:'Ping-pong：两个 core 交替读同一个只读 block，每一次都是 miss + 总线事务 + memory 读。'},
+     states:['V','I','I'],values:[0,null,null],mem:0,flows:[{from:'mem',to:0,label:'X=0'}],trans:[p(0,'I','V'),sn(1,'V','I')],stats:st(1,1,0)},
+    {who:0,action:'P0 写 X = 1',bus:null,desc:'P0 处于 V，即独占，直接写 hit，不需要总线事务。副本变 dirty，memory 里仍是 0。',
+     note:{t:'info',x:'VI 唯一的优点：拿到 V 之后，读写都是本地 hit。'},
+     states:['V','I','I'],values:[1,null,null],mem:0,memDirty:true,flows:[],trans:[p(0,'V','V')],stats:st(0,0,0)},
+    {who:1,action:'P1 读 X',bus:'BusRd',desc:'P0 snoop 到 BusRd，自己的副本是 dirty，必须先 Flush（把 X=1 写回 memory）再变 I。P1 从 memory 取到 1。',
+     states:['I','V','I'],values:[null,1,null],mem:1,flows:[{from:0,to:'mem',label:'Flush X=1'},{from:'mem',to:1,label:'X=1'}],trans:[p(1,'I','V'),sn(0,'V','I')],stats:st(1,1,1)},
+    {who:2,action:'P2 读 X',bus:'BusRd',desc:'P1 被 invalidate，P2 拿到 V。',
+     note:{t:'bad',x:'三个 core 想同时持有同一份只读数据，在 VI 里永远做不到。'},
+     states:['I','I','V'],values:[null,null,1],mem:1,flows:[{from:'mem',to:2,label:'X=1'}],trans:[p(2,'I','V'),sn(1,'V','I')],stats:st(1,1,0)}
+  ]
+},
+MSI:{
+  title:'MSI — Modified / Shared / Invalid',
+  intro:'把 VI 的 V 拆成 M 和 S。多个 core 可以同时处于 S 共享读取；想写必须先拿到 M——通过 BusRdX 或 BusUpgr 让所有其他副本失效。',
+  stateDefs:[
+    {s:'M',d:'唯一副本，dirty，可读写。被别人读时必须 Flush 写回。'},
+    {s:'S',d:'clean 的只读副本，系统里可能还有其他 S 副本。写之前要上总线升级。'},
+    {s:'I',d:'无效。'}],
+  nodes:{M:[190,55],S:[80,250],I:[300,250]},
+  loops:{S:'PrRd hit',M:'PrRd, PrWr hit'},
+  edges:[
+    {f:'I',t:'S',l:'PrRd / BusRd'},{f:'I',t:'M',l:'PrWr / BusRdX'},{f:'S',t:'M',l:'PrWr / BusUpgr'},
+    {f:'S',t:'I',l:'snoop BusRdX'},{f:'M',t:'S',l:'snoop BusRd / Flush'},{f:'M',t:'I',l:'snoop BusRdX / Flush'}],
+  problem:{
+    title:'问题：私有数据"读一次、马上写"也要广播',
+    body:'第 2 步里 P0 是全系统唯一持有 X 的 cache，但 MSI 在读 miss 时只能进 S——它没有办法知道此刻有没有别人持有副本。于是写的时候必须发一次 BusUpgr 去 invalidate 那些并不存在的副本。栈、局部变量、私有堆对象都是这种"先读后写、没人共享"的模式，是程序里最常见的访问方式，MSI 为每一次都付一次总线事务。',
+    next:'<b>→ MESI</b>：加 <b>E</b>（Exclusive）。读 miss 时如果总线上没人声称持有副本，就进 E——clean 且独占。之后写可以静默升级到 M，零总线事务。'},
+  steps:[
+    {who:0,action:'P0 读 X',bus:'BusRd',desc:'P0 miss，BusRd，memory 供数。MSI 下读 miss 一律进 S——协议不知道此刻有没有别人持有副本。',
+     states:['S','I','I'],values:[0,null,null],mem:0,flows:[{from:'mem',to:0,label:'X=0'}],trans:[p(0,'I','S')],stats:st(1,1,0)},
+    {who:0,action:'P0 写 X = 1',bus:'BusUpgr',desc:'P0 在 S，写之前必须拿到 M：发 BusUpgr 让潜在的其他副本失效。但此刻根本没有别的副本，这次广播完全是白费的。',
+     note:{t:'bad',x:'私有数据"读一次、马上写"是最常见的模式，MSI 每次都要为此付一次总线事务。'},
+     states:['M','I','I'],values:[1,null,null],mem:0,memDirty:true,flows:[],trans:[p(0,'S','M')],stats:st(1,0,0)},
+    {who:1,action:'P1 读 X',bus:'BusRd',desc:'P0 在 M，snoop 到 BusRd 后 Flush 写回 X=1 并降到 S；P1 拿到数据进 S。现在 memory 是最新的。',
+     states:['S','S','I'],values:[1,1,null],mem:1,flows:[{from:0,to:'mem',label:'Flush X=1'},{from:'mem',to:1,label:'X=1'}],trans:[p(1,'I','S'),sn(0,'M','S')],stats:st(1,1,1)},
+    {who:2,action:'P2 读 X',bus:'BusRd',desc:'P2 miss，memory 供数，进 S。三个 core 同时持有 S 副本，谁都不用被 invalidate。',
+     note:{t:'good',x:'这就是 S 解决 VI 问题的地方：只读共享不再 ping-pong。'},
+     states:['S','S','S'],values:[1,1,1],mem:1,flows:[{from:'mem',to:2,label:'X=1'}],trans:[p(2,'I','S')],stats:st(1,1,0)},
+    {who:1,action:'P1 写 X = 2',bus:'BusUpgr',desc:'P1 在 S，发 BusUpgr，P0 和 P2 的副本被 invalidate，P1 进 M。这一次 BusUpgr 是必要的。',
+     states:['I','M','I'],values:[null,2,null],mem:1,memDirty:true,flows:[],trans:[p(1,'S','M'),sn(0,'S','I'),sn(2,'S','I')],stats:st(1,0,0)},
+    {who:2,action:'P2 写 X = 3',bus:'BusRdX',desc:'P2 在 I 想写，发 BusRdX（读并独占）。P1 在 M，Flush 写回后变 I；P2 拿到数据并进 M。',
+     states:['I','I','M'],values:[null,null,3],mem:2,memDirty:true,flows:[{from:1,to:'mem',label:'Flush X=2'},{from:'mem',to:2,label:'X=2'}],trans:[p(2,'I','M'),sn(1,'M','I')],stats:st(1,1,1)}
+  ]
+},
+MESI:{
+  title:'MESI — 加 Exclusive',
+  intro:'在 MSI 上加 E。读 miss 时总线上有一根 shared 信号线，持有副本的 cache 会拉高它；没人拉高就进 E（clean 且独占）。E 状态下写是静默的 E→M，不需要任何总线事务。',
+  stateDefs:[
+    {s:'M',d:'唯一副本，dirty，可读写。'},
+    {s:'E',d:'唯一副本，但 clean（和 memory 一致）。写时直接变 M，不上总线。'},
+    {s:'S',d:'clean 的只读副本，可能有多份。'},
+    {s:'I',d:'无效。'}],
+  nodes:{E:[90,70],M:[290,70],S:[90,250],I:[290,250]},
+  loops:{E:'PrRd hit',S:'PrRd hit',M:'PrRd, PrWr hit'},
+  edges:[
+    {f:'I',t:'E',l:'PrRd, no sharer / BusRd'},{f:'I',t:'S',l:'PrRd, sharer / BusRd'},{f:'I',t:'M',l:'PrWr / BusRdX'},
+    {f:'E',t:'M',l:'PrWr (silent)'},{f:'E',t:'S',l:'snoop BusRd'},{f:'E',t:'I',l:'snoop BusRdX'},
+    {f:'S',t:'M',l:'PrWr / BusUpgr'},{f:'S',t:'I',l:'snoop BusRdX'},
+    {f:'M',t:'S',l:'snoop BusRd / Flush'},{f:'M',t:'I',l:'snoop BusRdX / Flush'}],
+  problem:{
+    title:'问题：dirty 块每次被别人读，都要写回 memory',
+    body:'第 3、5 步里 P1 处于 M，另一个 core 只是想读。MESI 里没有"dirty 但共享"的 state，读之后双方都得是 S（clean），所以 memory 必须先被更新——每次都是一次 memory write。在 producer/consumer 模式下（一个 core 反复写，另一个反复读），每一轮都产生一次写回，而那份数据马上又会被覆盖。memory 带宽被浪费在注定要作废的数据上。',
+    next:'<b>→ MOESI</b>：加 <b>O</b>（Owned）。M 被读时降到 O 而不是 S：副本仍然 dirty，由 owner 负责给其他 reader 供数（cache-to-cache），memory 一直 stale，直到 O 被 evict 才写回一次。'},
+  steps:[
+    {who:0,action:'P0 读 X',bus:'BusRd',desc:'P0 miss 发 BusRd。其他 cache snoop 后都没有拉高 shared 信号线，P0 得知自己是唯一副本，进 E。',
+     states:['E','I','I'],values:[0,null,null],mem:0,flows:[{from:'mem',to:0,label:'X=0'}],trans:[p(0,'I','E')],stats:st(1,1,0)},
+    {who:0,action:'P0 写 X = 1',bus:null,desc:'P0 在 E，已知自己是唯一副本，直接写 hit，静默升级到 M。零总线事务。',
+     note:{t:'good',x:'对比 MSI 第 2 步：同样的私有读后写，这里省掉了一次 BusUpgr。'},
+     states:['M','I','I'],values:[1,null,null],mem:0,memDirty:true,flows:[],trans:[p(0,'E','M')],stats:st(0,0,0)},
+    {who:1,action:'P1 读 X',bus:'BusRd',desc:'P0 在 M，snoop 到 BusRd。MESI 没有"dirty 但共享"的 state，所以 P0 必须把 X=1 写回 memory，然后双方都进 S（clean）。',
+     note:{t:'bad',x:'这次 memory write 是协议逼出来的——数据本可以留在 cache 里。'},
+     states:['S','S','I'],values:[1,1,null],mem:1,flows:[{from:0,to:'mem',label:'Flush X=1'},{from:'mem',to:1,label:'X=1'}],trans:[p(1,'I','S'),sn(0,'M','S')],stats:st(1,1,1)},
+    {who:1,action:'P1 写 X = 2',bus:'BusUpgr',desc:'P1 在 S（P0 也在 S），发 BusUpgr 让 P0 失效，P1 进 M。P1 现在是 producer。',
+     states:['I','M','I'],values:[null,2,null],mem:1,memDirty:true,flows:[],trans:[p(1,'S','M'),sn(0,'S','I')],stats:st(1,0,0)},
+    {who:0,action:'P0 读 X',bus:'BusRd',desc:'P0 是 consumer。P1 在 M，又要 Flush 写回 X=2，双方进 S。',
+     note:{t:'bad',x:'producer 写、consumer 读，每一轮都写一次 memory，而这份数据马上又会被覆盖。'},
+     states:['S','S','I'],values:[2,2,null],mem:2,flows:[{from:1,to:'mem',label:'Flush X=2'},{from:'mem',to:0,label:'X=2'}],trans:[p(0,'I','S'),sn(1,'M','S')],stats:st(1,1,1)},
+    {who:1,action:'P1 写 X = 3',bus:'BusUpgr',desc:'又一轮：BusUpgr，P0 失效，P1 进 M。下一次 P0 读时又会触发一次写回。',
+     states:['I','M','I'],values:[null,3,null],mem:2,memDirty:true,flows:[],trans:[p(1,'S','M'),sn(0,'S','I')],stats:st(1,0,0)}
+  ]
+},
+MOESI:{
+  title:'MOESI — 加 Owned',
+  intro:'在 MESI 上加 O。O 表示：本 cache 持有 dirty 副本，其他 cache 可能有 S 副本，memory 是 stale 的。O 负责响应所有 BusRd，直接 cache-to-cache 供数。写回只在 O 被替换时发生一次。',
+  stateDefs:[
+    {s:'M',d:'唯一副本，dirty，可读写。'},
+    {s:'O',d:'dirty 副本，但允许其他 cache 有 S 副本。只读；负责供数；被 evict 时写回。'},
+    {s:'E',d:'唯一副本，clean。'},
+    {s:'S',d:'只读副本，可能有多份。此时 memory 不一定是最新的（可能有 O 存在）。'},
+    {s:'I',d:'无效。'}],
+  nodes:{M:[190,50],O:[340,150],S:[280,280],I:[100,280],E:[40,150]},
+  loops:{E:'PrRd hit',S:'PrRd hit',M:'PrRd, PrWr hit',O:'PrRd hit; snoop BusRd / supply'},
+  edges:[
+    {f:'I',t:'E',l:'PrRd, no sharer'},{f:'I',t:'S',l:'PrRd, sharer'},{f:'I',t:'M',l:'PrWr / BusRdX'},
+    {f:'E',t:'M',l:'PrWr (silent)'},{f:'E',t:'S',l:'snoop BusRd'},{f:'E',t:'I',l:'snoop BusRdX'},
+    {f:'S',t:'M',l:'PrWr / BusUpgr'},{f:'S',t:'I',l:'snoop BusRdX'},
+    {f:'M',t:'O',l:'snoop BusRd / supply'},{f:'M',t:'I',l:'snoop BusRdX / supply'},
+    {f:'O',t:'M',l:'PrWr / BusUpgr'},{f:'O',t:'I',l:'snoop BusRdX, evict / Writeback'}],
+  problem:{
+    title:'剩下的代价，以及为什么到此为止',
+    body:'O 解决了 dirty 块共享时的 memory 写流量，但写回只是被推迟，没有消失；owner 还得一直留在 cache 里承担供数责任。更根本的限制在协议之外：snooping 依赖广播，每个事务都要被所有 cache 看到，core 数一多总线就成瓶颈。大规模多核转向 directory-based 协议——用一个目录记录每个 block 的 sharer，点对点发消息，状态集合（MESI / MOESI / MESIF 等）反而是在这个新基础上复用的。',
+    next:'<b>回看四步演进</b>：VI 的 V 太粗 → S 允许多份只读 → E 让私有数据免广播 → O 让 dirty 数据免写回。每加一个 state，都是为了让某一种常见访问模式少上一次总线或少碰一次 memory。'},
+  steps:[
+    {who:0,action:'P0 读 X',bus:'BusRd',desc:'同 MESI：没有 sharer，进 E。',
+     states:['E','I','I'],values:[0,null,null],mem:0,flows:[{from:'mem',to:0,label:'X=0'}],trans:[p(0,'I','E')],stats:st(1,1,0)},
+    {who:0,action:'P0 写 X = 1',bus:null,desc:'E → M 静默升级，零总线事务。',
+     states:['M','I','I'],values:[1,null,null],mem:0,memDirty:true,flows:[],trans:[p(0,'E','M')],stats:st(0,0,0)},
+    {who:1,action:'P1 读 X',bus:'BusRd',desc:'P0 在 M，snoop 到 BusRd：不写回 memory，而是直接把 X=1 通过总线送给 P1（cache-to-cache），自己降到 O。P1 进 S。memory 仍是 0，但没关系——O 负责供数。',
+     note:{t:'good',x:'对比 MESI 第 3 步：省掉了一次 memory write，P0 也保住了 dirty 数据的所有权。'},
+     states:['O','S','I'],values:[1,1,null],mem:0,memDirty:true,flows:[{from:0,to:1,label:'X=1 cache→cache'}],trans:[p(1,'I','S'),sn(0,'M','O')],stats:st(1,0,0)},
+    {who:2,action:'P2 读 X',bus:'BusRd',desc:'P2 miss。memory 是 stale 的，不能供数；P0（O）snoop 到 BusRd 后再次直接供数。P2 进 S。',
+     states:['O','S','S'],values:[1,1,1],mem:0,memDirty:true,flows:[{from:0,to:2,label:'X=1 cache→cache'}],trans:[p(2,'I','S'),sn(0,'O','O')],stats:st(1,0,0)},
+    {who:0,action:'P0 写 X = 2',bus:'BusUpgr',desc:'P0 在 O 想写：发 BusUpgr 让 P1、P2 失效，O → M。依然不碰 memory。',
+     states:['M','I','I'],values:[2,null,null],mem:0,memDirty:true,flows:[],trans:[p(0,'O','M'),sn(1,'S','I'),sn(2,'S','I')],stats:st(1,0,0)},
+    {who:1,action:'P1 读 X',bus:'BusRd',desc:'producer/consumer 第二轮：P0 M → O，cache-to-cache 供数，仍然没有 memory write。',
+     note:{t:'good',x:'MESI 里这一轮要写一次 memory；MOESI 里一次都不用，直到 O 被替换。'},
+     states:['O','S','I'],values:[2,2,null],mem:0,memDirty:true,flows:[{from:0,to:1,label:'X=2 cache→cache'}],trans:[p(1,'I','S'),sn(0,'M','O')],stats:st(1,0,0)},
+    {who:0,action:'P0 替换 X（eviction）',bus:'Writeback',desc:'P0 的 cache 需要腾位置，X 被 evict。O 副本是 dirty，此时才把 X=2 写回 memory。P0 → I，P1 保持 S，memory 终于是最新的。',
+     note:{t:'info',x:'写回没有消失，只是被推迟并合并成一次。'},
+     states:['I','S','I'],values:[null,2,null],mem:2,memDirty:false,flows:[{from:0,to:'mem',label:'Writeback X=2'}],trans:[p(0,'O','I')],stats:st(1,0,1)}
+  ]
+}
+};
+
+const ORDER=['VI','MSI','MESI','MOESI'];
+const stepIdx={VI:0,MSI:0,MESI:0,MOESI:0};
+let cur='VI', animToken=0;
+
+function snapshot(pr,k){
+  if(k===0) return {states:['I','I','I'],values:[null,null,null],mem:0,memDirty:false};
+  const s=pr.steps[k-1]; return {states:s.states,values:s.values,mem:s.mem,memDirty:!!s.memDirty};
+}
+function statsUpTo(pr,k){
+  const t={bus:0,memRd:0,memWr:0};
+  for(let i=0;i<k;i++){const s=pr.steps[i].stats;t.bus+=s.bus;t.memRd+=s.memRd;t.memWr+=s.memWr;}
+  return t;
+}
+
+/* ---------- diagram ---------- */
+function buildDiagram(pr){
+  const svg=$('#diagram'); svg.innerHTML=''; svg.setAttribute('viewBox','0 0 380 320');
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(t,a)=>{const e=document.createElementNS(ns,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const defs=mk('defs',{});
+  [['arr','var(--line)'],['arrP','var(--trace-hot)'],['arrS','var(--s-M)']].forEach(([id,c])=>{
+    const m=mk('marker',{id,viewBox:'0 0 10 10',refX:'9',refY:'5',markerWidth:'7',markerHeight:'7',orient:'auto-start-reverse'});
+    m.appendChild(mk('path',{d:'M0,0 L10,5 L0,10 z',fill:c})); defs.appendChild(m);
+  });
+  svg.appendChild(defs);
+  const R=24, names=Object.keys(pr.nodes);
+  const cx=names.reduce((a,n)=>a+pr.nodes[n][0],0)/names.length, cy=names.reduce((a,n)=>a+pr.nodes[n][1],0)/names.length;
+  const norm=v=>{const l=Math.hypot(v[0],v[1])||1;return [v[0]/l,v[1]/l];};
+  const gE=mk('g',{}); svg.appendChild(gE);
+  const label=(g,x,y,txt)=>{
+    const t=mk('text',{x,y,dy:'3'}); t.textContent=txt;
+    const w=txt.length*5.1+6; const r=mk('rect',{x:x-w/2,y:y-6,width:w,height:12,rx:2});
+    g.appendChild(r); g.appendChild(t);
+  };
+  pr.edges.forEach(e=>{
+    const a=pr.nodes[e.f], b=pr.nodes[e.t];
+    const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2], d=norm([b[0]-a[0],b[1]-a[1]]), n=[-d[1],d[0]];
+    const c=[mid[0]+n[0]*30,mid[1]+n[1]*30];
+    const da=norm([c[0]-a[0],c[1]-a[1]]), db=norm([c[0]-b[0],c[1]-b[1]]);
+    const s=[a[0]+da[0]*R,a[1]+da[1]*R], t=[b[0]+db[0]*R,b[1]+db[1]*R];
+    const g=mk('g',{class:'edge','data-key':e.f+'>'+e.t});
+    g.appendChild(mk('path',{d:`M${s[0]},${s[1]} Q${c[0]},${c[1]} ${t[0]},${t[1]}`,'marker-end':'url(#arr)'}));
+    label(g,.25*a[0]+.5*c[0]+.25*b[0],.25*a[1]+.5*c[1]+.25*b[1],e.l);
+    gE.appendChild(g);
+  });
+  Object.entries(pr.loops||{}).forEach(([nm,l])=>{
+    const a=pr.nodes[nm]; const u=norm([a[0]-cx,a[1]-cy]);
+    const rot=(v,ang)=>[v[0]*Math.cos(ang)-v[1]*Math.sin(ang),v[0]*Math.sin(ang)+v[1]*Math.cos(ang)];
+    const u1=rot(u,.6),u2=rot(u,-.6);
+    const p1=[a[0]+u1[0]*R,a[1]+u1[1]*R], p2=[a[0]+u2[0]*R,a[1]+u2[1]*R];
+    const c1=[a[0]+u1[0]*(R+42),a[1]+u1[1]*(R+42)], c2=[a[0]+u2[0]*(R+42),a[1]+u2[1]*(R+42)];
+    const g=mk('g',{class:'edge','data-key':nm+'>'+nm});
+    g.appendChild(mk('path',{d:`M${p1[0]},${p1[1]} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${p2[0]},${p2[1]}`,'marker-end':'url(#arr)'}));
+    label(g,a[0]+u[0]*(R+40),a[1]+u[1]*(R+40),l);
+    gE.appendChild(g);
+  });
+  names.forEach(nm=>{
+    const [x,y]=pr.nodes[nm];
+    const g=mk('g',{class:'node','data-node':nm});
+    g.appendChild(mk('circle',{cx:x,cy:y,r:R,style:`stroke:var(--s-${nm})`}));
+    const t=mk('text',{x,y:y-2,class:'letter'}); t.textContent=nm; g.appendChild(t);
+    const tg=mk('text',{x,y:y+13,class:'tags'}); g.appendChild(tg);
+    svg.appendChild(g);
+  });
+}
+function highlightDiagram(snap,step){
+  document.querySelectorAll('#diagram .edge').forEach(e=>{e.classList.remove('hi-proc','hi-snoop');e.querySelector('path').setAttribute('marker-end','url(#arr)');});
+  document.querySelectorAll('#diagram .node').forEach(n=>{
+    const nm=n.dataset.node; const cores=[0,1,2].filter(i=>snap.states[i]===nm).map(i=>'P'+i).join(' ');
+    n.querySelector('.tags').textContent=cores; n.classList.toggle('on',cores.length>0);
+    n.querySelector('circle').style.fill=cores.length?`color-mix(in srgb,var(--s-${nm}) 14%,var(--panel))`:'';
+  });
+  if(!step) return;
+  step.trans.forEach(t=>{
+    const e=document.querySelector(`#diagram .edge[data-key="${t.from}>${t.to}"]`); if(!e) return;
+    e.classList.add(t.k==='proc'?'hi-proc':'hi-snoop');
+    e.querySelector('path').setAttribute('marker-end',t.k==='proc'?'url(#arrP)':'url(#arrS)');
+    e.parentNode.appendChild(e);
+  });
+}
+
+/* ---------- stage ---------- */
+function anchor(id){
+  const sr=$('#stage').getBoundingClientRect();
+  if(id==='mem'){const r=$('#mem').getBoundingClientRect();return {x:r.left+r.width/2-sr.left,y:r.top-sr.top};}
+  const r=document.querySelector(`.core[data-core="${id}"]`).getBoundingClientRect();
+  return {x:r.left+r.width/2-sr.left,y:r.bottom-sr.top};
+}
+function busY(){const sr=$('#stage').getBoundingClientRect(),r=$('#bus').getBoundingClientRect();return r.top+r.height/2-sr.top;}
+function runFlow(f,token){
+  return new Promise(res=>{
+    if(token!==animToken) return res();
+    const a=anchor(f.from), b=anchor(f.to), y=busY();
+    const pk=document.createElement('div'); pk.className='packet'; pk.textContent=f.label; $('#stage').appendChild(pk);
+    const pts=[a,{x:a.x,y},{x:b.x,y},b];
+    const seg=[]; let total=0;
+    for(let i=1;i<pts.length;i++){const l=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);seg.push(l);total+=l;}
+    const off=[0]; let acc=0; seg.forEach(l=>{acc+=l;off.push(total?acc/total:1);});
+    const kf=pts.map((pt,i)=>({transform:`translate(${pt.x}px,${pt.y}px) translate(-50%,-50%)`,offset:off[i]}));
+    const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const anim=pk.animate(kf,{duration:reduce?1:Math.max(450,total*2),easing:'ease-in-out',fill:'forwards'});
+    anim.onfinish=()=>setTimeout(()=>{pk.remove();res();},reduce?200:140);
+  });
+}
+function applySnapshot(snap,prev){
+  [0,1,2].forEach(i=>{
+    const c=document.querySelector(`.core[data-core="${i}"]`), b=c.querySelector('.badge'), v=c.querySelector('.val');
+    b.className='badge s-'+snap.states[i]; b.textContent=snap.states[i];
+    if(snap.values[i]==null){v.textContent='—';v.className='val empty';} else {v.textContent='X = '+snap.values[i];v.className='val';}
+    c.classList.remove('changed'); if(prev&&(prev.states[i]!==snap.states[i]||prev.values[i]!==snap.values[i])){void c.offsetWidth;c.classList.add('changed');}
+  });
+  $('#mem-val').textContent='X = '+snap.mem;
+  $('#mem-flag').classList.toggle('on',snap.memDirty);
+}
+
+async function renderStep(animate){
+  const pr=PROTOCOLS[cur], k=stepIdx[cur], snap=snapshot(pr,k), prev=snapshot(pr,Math.max(0,k-1)), step=k>0?pr.steps[k-1]:null;
+  const token=++animToken;
+  document.querySelectorAll('.packet').forEach(x=>x.remove());
+  $('#step-label').textContent=k===0?'初始状态':`Step ${k} / ${pr.steps.length}`;
+  $('#step-action').innerHTML=step?step.action+(step.bus?`<code>${step.bus}</code>`:'<code>no bus</code>'):'所有 cache 为 I，memory X = 0';
+  $('#step-desc').textContent=step?step.desc:'按「下一步」或 → 键开始。';
+  const note=$('#note'); note.className='note'; if(step&&step.note){note.classList.add(step.note.t,'on');note.textContent=step.note.x;}
+  const s=statsUpTo(pr,k); $('#st-bus').textContent=s.bus; $('#st-rd').textContent=s.memRd; $('#st-wr').textContent=s.memWr;
+  $('#btn-prev').disabled=k===0; $('#btn-next').disabled=k===pr.steps.length;
+  document.querySelectorAll('.dot').forEach((d,i)=>{d.classList.toggle('active',i===k);d.classList.toggle('done',i<k);});
+  [0,1,2].forEach(i=>document.querySelector(`.core[data-core="${i}"]`).classList.toggle('acting',!!step&&step.who===i));
+  const chip=$('#bus-chip'); chip.classList.remove('on');
+  if(step&&step.bus){chip.textContent=step.bus;void chip.offsetWidth;chip.classList.add('on');}
+  highlightDiagram(snap,step);
+  if(animate&&step&&step.flows.length){
+    applySnapshot(prev,null);
+    for(const f of step.flows){await runFlow(f,token);}
+    if(token!==animToken) return;
+  }
+  applySnapshot(snap,animate?prev:null);
+}
+
+function buildDots(pr){
+  const d=$('#dots'); d.innerHTML='';
+  for(let i=0;i<=pr.steps.length;i++){
+    const b=document.createElement('button'); b.className='dot'; b.title=i===0?'初始状态':'Step '+i;
+    b.onclick=()=>{const anim=i===stepIdx[cur]+1;stepIdx[cur]=i;renderStep(anim);}; d.appendChild(b);
+  }
+}
+function renderProto(){
+  const pr=PROTOCOLS[cur];
+  document.querySelectorAll('.tab').forEach(b=>{const on=b.dataset.k===cur;b.classList.toggle('active',on);b.setAttribute('aria-selected',on);});
+  $('#p-title').textContent=pr.title; $('#p-intro').textContent=pr.intro;
+  $('#p-defs').innerHTML=pr.stateDefs.map(d=>`<div class="def"><span class="badge s-${d.s}">${d.s}</span><div><b>${STATE_NAMES[d.s]}</b> — ${d.d}</div></div>`).join('');
+  const pb=$('#problem'); pb.classList.toggle('final',cur==='MOESI');
+  pb.innerHTML=`<h2>${pr.problem.title}</h2><p>${pr.problem.body}</p><div class="next">${pr.problem.next}</div>`;
+  buildDiagram(pr); buildDots(pr); renderStep(false);
+}
+
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{cur=b.dataset.k;renderProto();});
+$('#btn-next').onclick=()=>{if(stepIdx[cur]<PROTOCOLS[cur].steps.length){stepIdx[cur]++;renderStep(true);}};
+$('#btn-prev').onclick=()=>{if(stepIdx[cur]>0){stepIdx[cur]--;renderStep(false);}};
+$('#btn-reset').onclick=()=>{stepIdx[cur]=0;renderStep(false);};
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.key==='ArrowRight'){$('#btn-next').click();e.preventDefault();}
+  else if(e.key==='ArrowLeft'){$('#btn-prev').click();e.preventDefault();}
+  else if(e.key==='r'||e.key==='R'){$('#btn-reset').click();}
+});
+window.addEventListener('resize',()=>{document.querySelectorAll('.packet').forEach(x=>x.remove());});
+renderProto();
+</script>
+</body>
+</html>
